@@ -1,24 +1,22 @@
 import argparse
-import json
+import os
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import videointelligence
+from google.cloud import storage
 
 
-def analyze_labels(gcs_uri: str, project_id: str, output_file: str = None) -> None:
+def analyze_labels(gcs_uri: str, project_id: str) -> None:
     """
-    Analyzes labels in a video stored in Google Cloud Storage.
+    Analyzes labels in a video and saves the results to the same GCS bucket.
 
     Args:
         gcs_uri: The Google Cloud Storage URI of the video file to analyze.
                  Must be in the format "gs://<bucket-name>/<object-name>".
         project_id: The Google Cloud project ID to use for billing and quotas.
-        output_file: Optional. Path to save the full JSON API response.
     """
     # When using Application Default Credentials, the project ID must be provided
     # to specify which project to use for billing and quotas.
-    # For more information on authentication, see:
-    # https://cloud.google.com/docs/authentication/production
     client_options = ClientOptions(quota_project_id=project_id)
     video_client = videointelligence.VideoIntelligenceServiceClient(
         client_options=client_options
@@ -37,39 +35,57 @@ def analyze_labels(gcs_uri: str, project_id: str, output_file: str = None) -> No
 
     print("\nFinished processing.")
 
-    if output_file:
-        # The `result` object is a special proxy object. We need to access
-        # the underlying `_pb` (protobuf) object to serialize it correctly.
-        json_response = videointelligence.AnnotateVideoResponse.to_json(result._pb)
-        with open(output_file, "w") as f:
-            f.write(json_response)
-        print(f"\nFull API response saved to {output_file}")
+    # The `result` object is a special proxy object. We need to access
+    # the underlying `_pb` (protobuf) object to serialize it correctly.
+    json_response = videointelligence.AnnotateVideoResponse.to_json(result._pb)
+
+    # Parse the GCS URI to get bucket and object path.
+    if not gcs_uri.startswith("gs://"):
+        raise ValueError("Invalid GCS URI. Must start with 'gs://'")
+
+    path_parts = gcs_uri[5:].split("/", 1)
+    bucket_name = path_parts[0]
+    blob_name = path_parts[1] if len(path_parts) > 1 else ""
+
+    # Create the output blob name by replacing the video extension with .json
+    output_blob_name, _ = os.path.splitext(blob_name)
+    output_blob_name += ".json"
+
+    # Upload the JSON to the same GCS bucket.
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    output_blob = bucket.blob(output_blob_name)
+    output_blob.upload_from_string(json_response, content_type="application/json")
+
+    output_gcs_uri = f"gs://{bucket_name}/{output_blob_name}"
+    print(f"\nFull API response saved to {output_gcs_uri}")
 
     # Get the first result, since we are only processing one video.
-    segment_labels = result.annotation_results[0].segment_label_annotations
-    for i, segment_label in enumerate(segment_labels):
-        print(f"Video label description: {segment_label.entity.description}")
-        for category_entity in segment_label.category_entities:
-            print(f"\tLabel category description: {category_entity.description}")
+    if result.annotation_results:
+        segment_labels = result.annotation_results[0].segment_label_annotations
+        for i, segment_label in enumerate(segment_labels):
+            print(f"Video label description: {segment_label.entity.description}")
+            for category_entity in segment_label.category_entities:
+                print(f"\tLabel category description: {category_entity.description}")
 
-        for i, segment in enumerate(segment_label.segments):
-            start_time = (
-                segment.segment.start_time_offset.seconds
-                + segment.segment.start_time_offset.microseconds / 1e6
-            )
-            end_time = (
-                segment.segment.end_time_offset.seconds
-                + segment.segment.end_time_offset.microseconds / 1e6
-            )
-            positions = f"{start_time}s to {end_time}s"
-            confidence = segment.confidence
-            print(f"\tSegment {i}: {positions} (confidence: {confidence})")
-        print("\n")
+            for i, segment in enumerate(segment_label.segments):
+                start_time = (
+                    segment.segment.start_time_offset.seconds
+                    + segment.segment.start_time_offset.microseconds / 1e6
+                )
+                end_time = (
+                    segment.segment.end_time_offset.seconds
+                    + segment.segment.end_time_offset.microseconds / 1e6
+                )
+                positions = f"{start_time}s to {end_time}s"
+                confidence = segment.confidence
+                print(f"\tSegment {i}: {positions} (confidence: {confidence})")
+            print("\n")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Analyzes labels in a video using the Google Cloud Video Intelligence API."
+        description="Analyzes labels in a video using the Google Cloud Video Intelligence API and saves the results to the same GCS bucket."
     )
     parser.add_argument(
         "gcs_uri",
@@ -80,9 +96,5 @@ if __name__ == "__main__":
         required=True,
         help="Your Google Cloud project ID to use for billing and API quotas.",
     )
-    parser.add_argument(
-        "--output-file",
-        help="Optional. Path to save the full JSON API response.",
-    )
     args = parser.parse_args()
-    analyze_labels(args.gcs_uri, args.project_id, args.output_file)
+    analyze_labels(args.gcs_uri, args.project_id)

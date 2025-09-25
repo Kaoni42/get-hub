@@ -43,16 +43,17 @@ Before you can run the script, you need to have the following:
 
 ## How to Run
 
-To analyze a video, run the `video_indexer.py` script. You must provide the Google Cloud Storage (GCS) URI of the video file and your Google Cloud project ID. You can also optionally specify an output file to save the full JSON response.
+To analyze a video, run the `video_indexer.py` script. You must provide the Google Cloud Storage (GCS) URI of the video file and your Google Cloud project ID.
+
+The script will automatically save the full JSON response to the same GCS bucket as the input video, replacing the file extension with `.json`.
 
 ### Example
 
 ```bash
-python video_indexer.py gs://your-bucket-name/your-video.mp4 --project-id your-gcp-project-id --output-file results.json
+python video_indexer.py gs://your-bucket-name/your-video.mp4 --project-id your-gcp-project-id
 ```
 
 -   Replace `gs://your-bucket-name/your-video.mp4` with the GCS path to your video file.
 -   Replace `your-gcp-project-id` with your Google Cloud project ID.
--   The `--output-file` argument is optional. If provided, the script will save the complete API response to the specified file (e.g., `results.json`).
 
-The script will print a summary of the detected labels to the console and, if specified, save the full response to a file.
+After the script completes, it will print a summary of the detected labels to the console and a confirmation message with the GCS path to the newly created JSON file (e.g., `gs://your-bucket-name/your-video.json`).

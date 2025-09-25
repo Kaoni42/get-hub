@@ -1,1 +1,2 @@
 google-cloud-videointelligence
+google-cloud-storage
