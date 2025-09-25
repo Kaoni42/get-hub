@@ -1,22 +1,26 @@
 import argparse
 
+from google.api_core.client_options import ClientOptions
 from google.cloud import videointelligence
 
 
-def analyze_labels(gcs_uri: str) -> None:
+def analyze_labels(gcs_uri: str, project_id: str) -> None:
     """
     Analyzes labels in a video stored in Google Cloud Storage.
 
     Args:
         gcs_uri: The Google Cloud Storage URI of the video file to analyze.
                  Must be in the format "gs://<bucket-name>/<object-name>".
+        project_id: The Google Cloud project ID to use for billing and quotas.
     """
+    # When using Application Default Credentials, the project ID must be provided
+    # to specify which project to use for billing and quotas.
     # For more information on authentication, see:
     # https://cloud.google.com/docs/authentication/production
-    #
-    # The GOOGLE_APPLICATION_CREDENTIALS environment variable should be
-    # set to the path of the service account key file.
-    video_client = videointelligence.VideoIntelligenceServiceClient()
+    client_options = ClientOptions(quota_project_id=project_id)
+    video_client = videointelligence.VideoIntelligenceServiceClient(
+        client_options=client_options
+    )
 
     features = [videointelligence.Feature.LABEL_DETECTION]
 
@@ -61,5 +65,10 @@ if __name__ == "__main__":
         "gcs_uri",
         help='The Google Cloud Storage URI of the video file to analyze (e.g., "gs://your-bucket/your-video.mp4").',
     )
+    parser.add_argument(
+        "--project-id",
+        required=True,
+        help="Your Google Cloud project ID to use for billing and API quotas.",
+    )
     args = parser.parse_args()
-    analyze_labels(args.gcs_uri)
+    analyze_labels(args.gcs_uri, args.project_id)

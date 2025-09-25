@@ -43,12 +43,15 @@ Before you can run the script, you need to have the following:
 
 ## How to Run
 
-To analyze a video, run the `video_indexer.py` script and provide the Google Cloud Storage (GCS) URI of the video file as an argument.
+To analyze a video, run the `video_indexer.py` script. You must provide the Google Cloud Storage (GCS) URI of the video file and your Google Cloud project ID.
 
 ### Example
 
 ```bash
-python video_indexer.py gs://your-bucket-name/your-video.mp4
+python video_indexer.py gs://your-bucket-name/your-video.mp4 --project-id your-gcp-project-id
 ```
 
-Replace `gs://your-bucket-name/your-video.mp4` with the GCS path to your video file. The script will then process the video and print the detected labels along with their timestamps.
+-   Replace `gs://your-bucket-name/your-video.mp4` with the GCS path to your video file.
+-   Replace `your-gcp-project-id` with your Google Cloud project ID.
+
+The script will then process the video and print the detected labels along with their timestamps.
