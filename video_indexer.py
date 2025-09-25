@@ -53,7 +53,7 @@ def analyze_labels(gcs_uri: str, project_id: str) -> None:
     output_blob_name += ".json"
 
     # Upload the JSON to the same GCS bucket.
-    storage_client = storage.Client()
+    storage_client = storage.Client(project=project_id)
     bucket = storage_client.bucket(bucket_name)
     output_blob = bucket.blob(output_blob_name)
     output_blob.upload_from_string(json_response, content_type="application/json")
