@@ -1,10 +1,12 @@
 import argparse
+import json
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import videointelligence
+from google.protobuf.json_format import MessageToJson
 
 
-def analyze_labels(gcs_uri: str, project_id: str) -> None:
+def analyze_labels(gcs_uri: str, project_id: str, output_file: str = None) -> None:
     """
     Analyzes labels in a video stored in Google Cloud Storage.
 
@@ -12,6 +14,7 @@ def analyze_labels(gcs_uri: str, project_id: str) -> None:
         gcs_uri: The Google Cloud Storage URI of the video file to analyze.
                  Must be in the format "gs://<bucket-name>/<object-name>".
         project_id: The Google Cloud project ID to use for billing and quotas.
+        output_file: Optional. Path to save the full JSON API response.
     """
     # When using Application Default Credentials, the project ID must be provided
     # to specify which project to use for billing and quotas.
@@ -34,6 +37,13 @@ def analyze_labels(gcs_uri: str, project_id: str) -> None:
     result = operation.result(timeout=300)
 
     print("\nFinished processing.")
+
+    if output_file:
+        # The result is a protobuf object. Convert it to a JSON string.
+        json_response = MessageToJson(result)
+        with open(output_file, "w") as f:
+            f.write(json_response)
+        print(f"\nFull API response saved to {output_file}")
 
     # Get the first result, since we are only processing one video.
     segment_labels = result.annotation_results[0].segment_label_annotations
@@ -70,5 +80,9 @@ if __name__ == "__main__":
         required=True,
         help="Your Google Cloud project ID to use for billing and API quotas.",
     )
+    parser.add_argument(
+        "--output-file",
+        help="Optional. Path to save the full JSON API response.",
+    )
     args = parser.parse_args()
-    analyze_labels(args.gcs_uri, args.project_id)
+    analyze_labels(args.gcs_uri, args.project_id, args.output_file)
