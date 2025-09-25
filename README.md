@@ -57,3 +57,22 @@ python video_indexer.py gs://your-bucket-name/your-video.mp4 --project-id your-g
 -   Replace `your-gcp-project-id` with your Google Cloud project ID.
 
 After the script completes, it will print a summary of the detected labels to the console and a confirmation message with the GCS path to the newly created JSON file (e.g., `gs://your-bucket-name/your-video.json`).
+
+## Generating a Visual Report
+
+After you have analyzed a video and have the results `.json` file in your GCS bucket, you can generate a visual HTML report with thumbnails for each detected label.
+
+### How to Run the Report Generator
+
+To generate the report, run the `generate_report.py` script and provide the GCS URI of the `.json` file created by the video indexer.
+
+#### Example
+
+```bash
+python generate_report.py gs://your-bucket-name/your-video.json --project-id your-gcp-project-id
+```
+
+-   Replace `gs://your-bucket-name/your-video.json` with the GCS path to your analysis file.
+-   Replace `your-gcp-project-id` with your Google Cloud project ID.
+
+The script will download the necessary files, process the video to extract thumbnails, and create a single `report.html` file in your local directory. You can open this file in any web browser to view the visual summary of the analysis.

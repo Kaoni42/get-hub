@@ -1,2 +1,4 @@
 google-cloud-videointelligence
 google-cloud-storage
+opencv-python
+Jinja2
