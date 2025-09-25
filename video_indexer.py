@@ -3,7 +3,6 @@ import json
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import videointelligence
-from google.protobuf.json_format import MessageToJson
 
 
 def analyze_labels(gcs_uri: str, project_id: str, output_file: str = None) -> None:
@@ -39,8 +38,9 @@ def analyze_labels(gcs_uri: str, project_id: str, output_file: str = None) -> No
     print("\nFinished processing.")
 
     if output_file:
-        # The result is a protobuf object. Convert it to a JSON string.
-        json_response = MessageToJson(result)
+        # The `result` object is a special proxy object. We need to access
+        # the underlying `_pb` (protobuf) object to serialize it correctly.
+        json_response = videointelligence.AnnotateVideoResponse.to_json(result._pb)
         with open(output_file, "w") as f:
             f.write(json_response)
         print(f"\nFull API response saved to {output_file}")
