@@ -35,9 +35,10 @@ def analyze_labels(gcs_uri: str, project_id: str) -> None:
 
     print("\nFinished processing.")
 
-    # The `result` object is a special proxy object. We need to access
-    # the underlying `_pb` (protobuf) object to serialize it correctly.
-    json_response = videointelligence.AnnotateVideoResponse.to_json(result._pb)
+    # The `result` object from the operation is the fully populated
+    # AnnotateVideoResponse. We can pass it directly to the helper
+    # method to get the JSON representation.
+    json_response = videointelligence.AnnotateVideoResponse.to_json(result)
 
     # Parse the GCS URI to get bucket and object path.
     if not gcs_uri.startswith("gs://"):
