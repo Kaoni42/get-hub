@@ -39,7 +39,6 @@ def generate_report(gcs_uri: str, project_id: str):
 
     # Determine video file name
     video_blob_name, _ = os.path.splitext(json_blob_name)
-    # The API might not preserve the original extension, so we try a few common ones.
     possible_video_extensions = ['.mp4', '.mov', '.avi', '.mpg']
     video_blob = None
     for ext in possible_video_extensions:
@@ -68,22 +67,23 @@ def generate_report(gcs_uri: str, project_id: str):
     if not cap.isOpened():
         raise IOError(f"Could not open video file: {video_path}")
 
-    # Defensively parse the JSON to find label annotations
+    # Defensively parse the JSON to find label annotations.
+    # Based on the diagnostic output, the data is in `shotLabelAnnotations`.
     annotations = []
     annotation_results = json_data.get('annotationResults')
     if annotation_results and isinstance(annotation_results, list) and len(annotation_results) > 0:
         first_result = annotation_results[0]
-        print("Found annotation results. Checking for labels...")
 
-        # Prefer segment-level labels, but fall back to shot-level as they have a similar structure
-        if 'segmentLabelAnnotations' in first_result:
+        # Prioritize 'shotLabelAnnotations' as it contains the data.
+        if 'shotLabelAnnotations' in first_result and first_result['shotLabelAnnotations']:
+            annotations = first_result['shotLabelAnnotations']
+            print(f"Found {len(annotations)} shot-level label annotations.")
+        # Fallback to segment-level just in case.
+        elif 'segmentLabelAnnotations' in first_result:
             annotations = first_result.get('segmentLabelAnnotations', [])
             print(f"Found {len(annotations)} segment-level label annotations.")
-        elif 'shotLabelAnnotations' in first_result:
-            annotations = first_result.get('shotLabelAnnotations', [])
-            print(f"Found {len(annotations)} shot-level label annotations.")
         else:
-            print("Warning: No 'segmentLabelAnnotations' or 'shotLabelAnnotations' found in the first annotation result.")
+            print("Warning: No 'shotLabelAnnotations' or 'segmentLabelAnnotations' found.")
     else:
         print("Warning: No 'annotationResults' found in the JSON file.")
 
@@ -92,25 +92,19 @@ def generate_report(gcs_uri: str, project_id: str):
 
     for annotation in annotations:
         label = annotation.get('entity', {}).get('description', 'N/A')
-        start_time_ms = 1000  # Default to 1s for video-level labels
-        start_time = -1  # Sentinel for video-level
-        end_time = -1    # Sentinel for video-level
-        confidence = 0   # No confidence for video-level labels
+        start_time_ms = 1000
+        start_time, end_time, confidence = -1, -1, 0
 
-        # If the label has segments, use the first one for the thumbnail and data.
         if 'segments' in annotation and annotation['segments']:
             segment = annotation['segments'][0]
             confidence = segment.get('confidence', 0)
             segment_data = segment.get('segment', {})
             start_time_str = segment_data.get('startTimeOffset', '0s')
             end_time_str = segment_data.get('endTimeOffset', '0s')
-
-            # Convert time from string (e.g., "10.5s") to float and milliseconds
             start_time = float(start_time_str.rstrip('s'))
             end_time = float(end_time_str.rstrip('s'))
             start_time_ms = start_time * 1000
 
-        # Capture frame for thumbnail
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time_ms)
         success, frame = cap.read()
         thumbnail_base64 = ""
@@ -127,12 +121,11 @@ def generate_report(gcs_uri: str, project_id: str):
         })
 
     cap.release()
-    os.remove(video_path) # Clean up the temporary video file
+    os.remove(video_path)
     print("Finished generating thumbnails.")
 
     # --- Render HTML Report ---
     print("Rendering HTML report...")
-    # Get the directory where the script is located to find the template file.
     script_dir = os.path.dirname(os.path.abspath(__file__))
     env = Environment(loader=FileSystemLoader(script_dir))
     template = env.get_template('template.html')
