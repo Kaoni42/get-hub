@@ -81,10 +81,23 @@
             <div class="result-card-content">
                 <h3>{{ item.label }}</h3>
                 <p>
-                    <span class="timestamp">{{ "%.2f"|format(item.start_time) }}s - {{ "%.2f"|format(item.end_time) }}s</span><br>
-                    Confidence: {{ "%.2f"|format(item.confidence * 100) }}%
+                    <span class="timestamp">
+                        {% if item.start_time >= 0 %}
+                            {{ "%.2f"|format(item.start_time) }}s - {{ "%.2f"|format(item.end_time) }}s
+                        {% else %}
+                            Video-Level Label
+                        {% endif %}
+                    </span>
+                    {% if item.confidence > 0 %}<br>
+                        Confidence: {{ "%.2f"|format(item.confidence * 100) }}%
+                    {% endif %}
                 </p>
             </div>
+        </div>
+        {% else %}
+        <div class="video-info" style="text-align: center;">
+            <h3>No Labels Detected</h3>
+            <p>The analysis did not find any recognizable labels in the video, or the input JSON file was empty.</p>
         </div>
         {% endfor %}
     </div>
