@@ -105,7 +105,9 @@ def generate_report(gcs_uri: str, project_id: str):
 
     # --- Render HTML Report ---
     print("Rendering HTML report...")
-    env = Environment(loader=FileSystemLoader('.'))
+    # Get the directory where the script is located to find the template file.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    env = Environment(loader=FileSystemLoader(script_dir))
     template = env.get_template('template.html')
 
     html_content = template.render(
