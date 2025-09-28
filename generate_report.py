@@ -9,15 +9,17 @@ from google.cloud import storage
 from jinja2 import Environment, FileSystemLoader
 
 
-def generate_report(gcs_uri: str, project_id: str):
+def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
     """
-    Generates an HTML report from a Video Intelligence JSON analysis file.
+    Generates an HTML report from a Video Intelligence JSON analysis file
+    or runs in diagnostic mode to print the JSON structure.
 
     Args:
         gcs_uri: The GCS URI of the JSON analysis file.
         project_id: The Google Cloud project ID.
+        diagnose: If True, prints the JSON structure and exits.
     """
-    print(f"Starting report generation for {gcs_uri}")
+    print(f"Starting process for {gcs_uri}")
 
     # Initialize GCS client
     storage_client = storage.Client(project=project_id)
@@ -36,6 +38,17 @@ def generate_report(gcs_uri: str, project_id: str):
     print(f"Downloading JSON file: {json_blob_name}")
     json_blob = bucket.blob(json_blob_name)
     json_data = json.loads(json_blob.download_as_string())
+
+    # --- DIAGNOSTIC MODE ---
+    if diagnose:
+        output_filename = "diagnostic_output.json"
+        print(f"\n--- DIAGNOSTIC MODE ---")
+        with open(output_filename, "w") as f:
+            f.write(json.dumps(json_data, indent=4))
+        print(f"Diagnostic data saved to '{output_filename}'.")
+        print("Please copy the contents of this file and provide it in your response.")
+        print("--- END DIAGNOSTIC MODE ---\n")
+        return
 
     # Determine video file name
     video_blob_name, _ = os.path.splitext(json_blob_name)
@@ -74,10 +87,9 @@ def generate_report(gcs_uri: str, project_id: str):
     print(f"Found {len(annotations)} object annotations to process.")
 
     for annotation in annotations:
-        # We only care about people for shot classification
         entity = annotation.get('entity', {})
         description = entity.get('description')
-        if description != 'person':
+        if not description:
             continue
 
         segment = annotation.get('segment', {})
@@ -87,24 +99,27 @@ def generate_report(gcs_uri: str, project_id: str):
         end_time = float(end_time_str.rstrip('s'))
         duration = end_time - start_time
 
-        shot_type = "Unknown"
-        # Get the bounding box from the first frame of the segment to classify the shot
-        if 'frames' in annotation and annotation['frames']:
-            first_frame = annotation['frames'][0]
-            box = first_frame.get('normalizedBoundingBox', {})
-            box_height = box.get('bottom', 0) - box.get('top', 0)
+        shot_type = "N/A"  # Default for non-person objects
+        if description == 'person':
+            # Get the bounding box from the first frame of the segment to classify the shot
+            if 'frames' in annotation and annotation['frames']:
+                first_frame = annotation['frames'][0]
+                box = first_frame.get('normalizedBoundingBox', {})
+                box_height = box.get('bottom', 0) - box.get('top', 0)
 
-            # Classify based on the height of the person relative to the frame
-            if box_height > 0.6:
-                shot_type = "Close-up Shot"
-            elif box_height > 0.3:
-                shot_type = "Medium Shot"
+                # Classify based on the height of the person relative to the frame
+                if box_height > 0.6:
+                    shot_type = "Close-up Shot"
+                elif box_height > 0.3:
+                    shot_type = "Medium Shot"
+                else:
+                    shot_type = "Wide Shot"
             else:
-                shot_type = "Wide Shot"
+                shot_type = "Unknown"  # Person detected, but no frame data
 
         # Generate thumbnails for scrubbing
         thumbnails_list = []
-        if duration > 0.1:
+        if duration > 0.1: # Only generate multiple frames if segment is long enough
             interval = duration / NUM_FRAMES_PER_SEGMENT
             for i in range(NUM_FRAMES_PER_SEGMENT):
                 time_pos_ms = (start_time + (i * interval)) * 1000
@@ -113,15 +128,19 @@ def generate_report(gcs_uri: str, project_id: str):
                 if success:
                     _, buffer = cv2.imencode('.jpg', frame)
                     thumbnails_list.append(base64.b64encode(buffer).decode('utf-8'))
-        else: # For very short segments, just grab the first frame
+
+        # If no thumbnails were generated (short clip or error), grab the first frame
+        if not thumbnails_list:
             cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
             success, frame = cap.read()
             if success:
                 _, buffer = cv2.imencode('.jpg', frame)
                 thumbnails_list.append(base64.b64encode(buffer).decode('utf-8'))
 
+        # Fallback for truly problematic cases
         if not thumbnails_list:
-            thumbnails_list.append("")
+            print(f"Warning: Could not generate thumbnail for {description} at {start_time}s")
+            thumbnails_list.append("") # Add a placeholder
 
         results_data.append({
             'label': description.capitalize(),
@@ -156,7 +175,7 @@ def generate_report(gcs_uri: str, project_id: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Generates an HTML report with thumbnails from a Google Video Intelligence analysis file."
+        description="Generates an HTML report or diagnoses JSON structure from a Google Video Intelligence analysis file."
     )
     parser.add_argument(
         "gcs_uri",
@@ -167,5 +186,10 @@ if __name__ == "__main__":
         required=True,
         help="Your Google Cloud project ID.",
     )
+    parser.add_argument(
+        "--diagnose",
+        action="store_true",
+        help="Run in diagnostic mode. Prints the JSON structure and exits.",
+    )
     args = parser.parse_args()
-    generate_report(args.gcs_uri, args.project_id)
+    generate_report(args.gcs_uri, args.project_id, args.diagnose)

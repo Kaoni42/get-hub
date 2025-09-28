@@ -63,3 +63,13 @@ python generate_report.py gs://your-bucket-name/your-video.json --project-id you
 ```
 
 You can open the generated `report.html` file in any web browser to view the visual summary of the analysis, including the shot type for each detected person.
+
+### Troubleshooting: Blank or Empty Reports
+
+If your `report.html` file is blank or shows a "No Labels Detected" message when you expect to see results, it likely means the script is not finding the object data in the JSON file. You can use the diagnostic mode to inspect the structure of the data.
+
+```bash
+python generate_report.py gs://your-bucket-name/your-video.json --project-id your-gcp-project-id --diagnose
+```
+
+When you run the script with the `--diagnose` flag, it will not generate a report. Instead, it will save the entire structure of your JSON file to a new file named `diagnostic_output.json` in your local directory. You can then open this file and provide its contents to help resolve issues with data parsing.
