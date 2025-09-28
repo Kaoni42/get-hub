@@ -59,59 +59,62 @@ def generate_report(gcs_uri: str, project_id: str):
         video_blob.download_to_filename(temp_video_file.name)
         video_path = temp_video_file.name
 
-    # --- Process Video and Generate Thumbnails ---
-    print("Processing video to generate thumbnails...")
+    # --- Process Video, Classify Shots, and Generate Thumbnails ---
+    print("Processing video to classify shots and generate thumbnails...")
     cap = cv2.VideoCapture(video_path)
     results_data = []
-    NUM_FRAMES_PER_SEGMENT = 15  # Number of frames for the scrub sequence
+    NUM_FRAMES_PER_SEGMENT = 15
+    VIDEO_HEIGHT = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
     if not cap.isOpened():
         raise IOError(f"Could not open video file: {video_path}")
 
-    # Correctly and robustly parse the JSON to find all label annotations.
-    # Based on the user's diagnostic output, the data is in `shotLabelAnnotations`.
-    all_annotations = []
-    if 'annotationResults' in json_data and json_data.get('annotationResults'):
-        for result in json_data['annotationResults']:
-            if 'shotLabelAnnotations' in result and result.get('shotLabelAnnotations'):
-                all_annotations.extend(result['shotLabelAnnotations'])
+    # Parse the new objectAnnotations
+    annotations = json_data.get('annotationResults', [{}])[0].get('objectAnnotations', [])
+    print(f"Found {len(annotations)} object annotations to process.")
 
-    print(f"Found a total of {len(all_annotations)} label annotations to process.")
+    for annotation in annotations:
+        # We only care about people for shot classification
+        entity = annotation.get('entity', {})
+        description = entity.get('description')
+        if description != 'person':
+            continue
 
-    for annotation in all_annotations:
-        label = annotation.get('entity', {}).get('description', 'N/A')
-        thumbnails_list = []
-        start_time, end_time, confidence = -1, -1, 0
+        segment = annotation.get('segment', {})
+        start_time_str = segment.get('startTimeOffset', '0s')
+        end_time_str = segment.get('endTimeOffset', '0s')
+        start_time = float(start_time_str.rstrip('s'))
+        end_time = float(end_time_str.rstrip('s'))
+        duration = end_time - start_time
 
-        if 'segments' in annotation and annotation.get('segments'):
-            segment = annotation['segments'][0]
-            confidence = segment.get('confidence', 0)
-            segment_data = segment.get('segment', {})
-            start_time_str = segment_data.get('startTimeOffset', '0s')
-            end_time_str = segment_data.get('endTimeOffset', '0s')
-            start_time = float(start_time_str.rstrip('s'))
-            end_time = float(end_time_str.rstrip('s'))
+        shot_type = "Unknown"
+        # Get the bounding box from the first frame of the segment to classify the shot
+        if 'frames' in annotation and annotation['frames']:
+            first_frame = annotation['frames'][0]
+            box = first_frame.get('normalizedBoundingBox', {})
+            box_height = box.get('bottom', 0) - box.get('top', 0)
 
-            duration = end_time - start_time
-
-            if duration > 0.1:
-                interval = duration / NUM_FRAMES_PER_SEGMENT
-                for i in range(NUM_FRAMES_PER_SEGMENT):
-                    time_pos_ms = (start_time + (i * interval)) * 1000
-                    cap.set(cv2.CAP_PROP_POS_MSEC, time_pos_ms)
-                    success, frame = cap.read()
-                    if success:
-                        _, buffer = cv2.imencode('.jpg', frame)
-                        thumbnails_list.append(base64.b64encode(buffer).decode('utf-8'))
+            # Classify based on the height of the person relative to the frame
+            if box_height > 0.6:
+                shot_type = "Close-up Shot"
+            elif box_height > 0.3:
+                shot_type = "Medium Shot"
             else:
-                cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
+                shot_type = "Wide Shot"
+
+        # Generate thumbnails for scrubbing
+        thumbnails_list = []
+        if duration > 0.1:
+            interval = duration / NUM_FRAMES_PER_SEGMENT
+            for i in range(NUM_FRAMES_PER_SEGMENT):
+                time_pos_ms = (start_time + (i * interval)) * 1000
+                cap.set(cv2.CAP_PROP_POS_MSEC, time_pos_ms)
                 success, frame = cap.read()
                 if success:
                     _, buffer = cv2.imencode('.jpg', frame)
                     thumbnails_list.append(base64.b64encode(buffer).decode('utf-8'))
-        else:
-            # Handle labels with no segments (video-level)
-            cap.set(cv2.CAP_PROP_POS_MSEC, 1000) # Default to 1s mark
+        else: # For very short segments, just grab the first frame
+            cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
             success, frame = cap.read()
             if success:
                 _, buffer = cv2.imencode('.jpg', frame)
@@ -121,16 +124,17 @@ def generate_report(gcs_uri: str, project_id: str):
             thumbnails_list.append("")
 
         results_data.append({
-            'label': label,
+            'label': description.capitalize(),
             'start_time': start_time,
             'end_time': end_time,
-            'confidence': confidence,
+            'shot_type': shot_type,
+            'confidence': annotation.get('confidence', 0),
             'thumbnails': thumbnails_list
         })
 
     cap.release()
     os.remove(video_path)
-    print("Finished generating thumbnails.")
+    print("Finished classifying shots and generating thumbnails.")
 
     # --- Render HTML Report ---
     print("Rendering HTML report...")

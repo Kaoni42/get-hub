@@ -66,6 +66,15 @@
             border-radius: 4px;
             display: inline-block;
         }
+        .shot-type {
+            font-size: 0.9em;
+            color: #31708f;
+            background-color: #d9edf7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -90,7 +99,8 @@
                         {% else %}
                             Video-Level Label
                         {% endif %}
-                    </span>
+                    </span><br>
+                    <span class="shot-type">{{ item.shot_type }}</span>
                     {% if item.confidence > 0 %}<br>
                         Confidence: {{ "%.2f"|format(item.confidence * 100) }}%
                     {% endif %}
