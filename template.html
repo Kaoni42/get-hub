@@ -77,7 +77,10 @@
     <div class="results-grid">
         {% for item in results %}
         <div class="result-card">
-            <img src="data:image/jpeg;base64,{{ item.thumbnail }}" alt="Thumbnail for {{ item.label }}">
+            <img src="data:image/jpeg;base64,{{ item.thumbnails[0] }}"
+                 alt="Thumbnail for {{ item.label }}"
+                 class="scrubbable"
+                 data-thumbnails='{{ item.thumbnails | tojson | safe }}'>
             <div class="result-card-content">
                 <h3>{{ item.label }}</h3>
                 <p>
@@ -101,5 +104,40 @@
         </div>
         {% endfor %}
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const scrubbableImages = document.querySelectorAll('.scrubbable');
+
+            scrubbableImages.forEach(img => {
+                const thumbnails = JSON.parse(img.dataset.thumbnails);
+                const frameCount = thumbnails.length;
+
+                if (frameCount <= 1) return; // Don't add listeners if there's nothing to scrub
+
+                const originalSrc = img.src;
+
+                img.addEventListener('mousemove', function(e) {
+                    const rect = img.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const width = rect.width;
+                    const percent = x / width;
+
+                    let frameIndex = Math.floor(percent * frameCount);
+                    // Clamp the index to be within the array bounds
+                    frameIndex = Math.max(0, Math.min(frameCount - 1, frameIndex));
+
+                    const newSrc = 'data:image/jpeg;base64,' + thumbnails[frameIndex];
+                    if (img.src !== newSrc) {
+                        img.src = newSrc;
+                    }
+                });
+
+                img.addEventListener('mouseleave', function() {
+                    img.src = originalSrc;
+                });
+            });
+        });
+    </script>
 </body>
 </html>

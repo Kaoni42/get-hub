@@ -75,4 +75,4 @@ python generate_report.py gs://your-bucket-name/your-video.json --project-id you
 -   Replace `gs://your-bucket-name/your-video.json` with the GCS path to your analysis file.
 -   Replace `your-gcp-project-id` with your Google Cloud project ID.
 
-The script will download the necessary files, process the video to extract thumbnails, and create a single `report.html` file in your local directory. You can open this file in any web browser to view the visual summary of the analysis.
+The script will download the necessary files, process the video to extract thumbnails, and create a single `report.html` file in your local directory. You can open this file in any web browser to view the visual summary of the analysis. Hover your mouse over the thumbnails in the report to scrub through a preview of the video segment.

@@ -63,39 +63,27 @@ def generate_report(gcs_uri: str, project_id: str):
     print("Processing video to generate thumbnails...")
     cap = cv2.VideoCapture(video_path)
     results_data = []
+    NUM_FRAMES_PER_SEGMENT = 15  # Number of frames for the scrub sequence
 
     if not cap.isOpened():
         raise IOError(f"Could not open video file: {video_path}")
 
-    # Defensively parse the JSON to find label annotations.
-    # Based on the diagnostic output, the data is in `shotLabelAnnotations`.
-    annotations = []
-    annotation_results = json_data.get('annotationResults')
-    if annotation_results and isinstance(annotation_results, list) and len(annotation_results) > 0:
-        first_result = annotation_results[0]
+    # Correctly and robustly parse the JSON to find all label annotations.
+    # Based on the user's diagnostic output, the data is in `shotLabelAnnotations`.
+    all_annotations = []
+    if 'annotationResults' in json_data and json_data.get('annotationResults'):
+        for result in json_data['annotationResults']:
+            if 'shotLabelAnnotations' in result and result.get('shotLabelAnnotations'):
+                all_annotations.extend(result['shotLabelAnnotations'])
 
-        # Prioritize 'shotLabelAnnotations' as it contains the data.
-        if 'shotLabelAnnotations' in first_result and first_result['shotLabelAnnotations']:
-            annotations = first_result['shotLabelAnnotations']
-            print(f"Found {len(annotations)} shot-level label annotations.")
-        # Fallback to segment-level just in case.
-        elif 'segmentLabelAnnotations' in first_result:
-            annotations = first_result.get('segmentLabelAnnotations', [])
-            print(f"Found {len(annotations)} segment-level label annotations.")
-        else:
-            print("Warning: No 'shotLabelAnnotations' or 'segmentLabelAnnotations' found.")
-    else:
-        print("Warning: No 'annotationResults' found in the JSON file.")
+    print(f"Found a total of {len(all_annotations)} label annotations to process.")
 
-    if not annotations:
-        print("The report will be empty as no processable annotations were found.")
-
-    for annotation in annotations:
+    for annotation in all_annotations:
         label = annotation.get('entity', {}).get('description', 'N/A')
-        start_time_ms = 1000
+        thumbnails_list = []
         start_time, end_time, confidence = -1, -1, 0
 
-        if 'segments' in annotation and annotation['segments']:
+        if 'segments' in annotation and annotation.get('segments'):
             segment = annotation['segments'][0]
             confidence = segment.get('confidence', 0)
             segment_data = segment.get('segment', {})
@@ -103,21 +91,41 @@ def generate_report(gcs_uri: str, project_id: str):
             end_time_str = segment_data.get('endTimeOffset', '0s')
             start_time = float(start_time_str.rstrip('s'))
             end_time = float(end_time_str.rstrip('s'))
-            start_time_ms = start_time * 1000
 
-        cap.set(cv2.CAP_PROP_POS_MSEC, start_time_ms)
-        success, frame = cap.read()
-        thumbnail_base64 = ""
-        if success:
-            _, buffer = cv2.imencode('.jpg', frame)
-            thumbnail_base64 = base64.b64encode(buffer).decode('utf-8')
+            duration = end_time - start_time
+
+            if duration > 0.1:
+                interval = duration / NUM_FRAMES_PER_SEGMENT
+                for i in range(NUM_FRAMES_PER_SEGMENT):
+                    time_pos_ms = (start_time + (i * interval)) * 1000
+                    cap.set(cv2.CAP_PROP_POS_MSEC, time_pos_ms)
+                    success, frame = cap.read()
+                    if success:
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        thumbnails_list.append(base64.b64encode(buffer).decode('utf-8'))
+            else:
+                cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
+                success, frame = cap.read()
+                if success:
+                    _, buffer = cv2.imencode('.jpg', frame)
+                    thumbnails_list.append(base64.b64encode(buffer).decode('utf-8'))
+        else:
+            # Handle labels with no segments (video-level)
+            cap.set(cv2.CAP_PROP_POS_MSEC, 1000) # Default to 1s mark
+            success, frame = cap.read()
+            if success:
+                _, buffer = cv2.imencode('.jpg', frame)
+                thumbnails_list.append(base64.b64encode(buffer).decode('utf-8'))
+
+        if not thumbnails_list:
+            thumbnails_list.append("")
 
         results_data.append({
             'label': label,
             'start_time': start_time,
             'end_time': end_time,
             'confidence': confidence,
-            'thumbnail': thumbnail_base64
+            'thumbnails': thumbnails_list
         })
 
     cap.release()
