@@ -76,6 +76,7 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
     print("Processing video to group objects, classify shots, and generate thumbnails...")
     cap = cv2.VideoCapture(video_path)
     tracked_objects = {}
+    untracked_counter = 0
     NUM_FRAMES_PER_SEGMENT = 15
     VIDEO_HEIGHT = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
@@ -86,19 +87,25 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
     annotations = json_data.get('annotationResults', [{}])[0].get('objectAnnotations', [])
     print(f"Found {len(annotations)} object annotations to process.")
 
-    for annotation in annotations:
+    for idx, annotation in enumerate(annotations):
         entity = annotation.get('entity', {})
         description = entity.get('description')
-        track_id = annotation.get('trackId')
-        if not description or not track_id:
+        if not description:
             continue
 
-        # If this is the first time we see this track, initialize its entry
-        if track_id not in tracked_objects:
-            tracked_objects[track_id] = {
+        # Use trackId if available, otherwise generate a unique key for untracked objects
+        track_id = annotation.get('trackId')
+        group_key = track_id if track_id else f"untracked-{idx}"
+
+        # If this is the first time we see this track/group, initialize its entry
+        if group_key not in tracked_objects:
+            tracked_objects[group_key] = {
                 'label': description.capitalize(),
+                'id': track_id if track_id else f"Untracked #{untracked_counter}",
                 'segments': []
             }
+            if not track_id:
+                untracked_counter += 1
 
         segment_data = annotation.get('segment', {})
         start_time_str = segment_data.get('startTimeOffset', '0s')
@@ -148,7 +155,7 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
             print(f"Warning: Could not generate thumbnail for {description} at {start_time}s")
             thumbnails_list.append("")
 
-        tracked_objects[track_id]['segments'].append({
+        tracked_objects[group_key]['segments'].append({
             'start_time': start_time,
             'end_time': end_time,
             'shot_type': shot_type,

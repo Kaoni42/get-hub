@@ -103,9 +103,9 @@
         <strong>Video File:</strong> {{ video_file }}
     </div>
 
-    {% for track_id, object_data in tracked_objects.items() %}
+    {% for group_key, object_data in tracked_objects.items() %}
     <div class="track-group">
-        <h2>{{ object_data.label }} <span class="track-id">#{{ track_id }}</span></h2>
+        <h2>{{ object_data.label }} <span class="track-id">#{{ object_data.id }}</span></h2>
         <div class="results-grid">
             {% for segment in object_data.segments %}
             <div class="result-card">
@@ -130,8 +130,8 @@
     </div>
     {% else %}
     <div class="video-info" style="text-align: center;">
-        <h3>No Trackable Objects Detected</h3>
-        <p>The analysis did not find any objects with a track ID in the video.</p>
+        <h3>No Objects Detected</h3>
+        <p>The analysis did not find any trackable or untracked objects in the video.</p>
     </div>
     {% endfor %}
 
