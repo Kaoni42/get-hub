@@ -36,7 +36,7 @@ def classify_shot(box: dict) -> str:
 
     # New classification logic
     distance_metric = top + distance_from_side
-    if distance_metric < 0.08:
+    if distance_metric < 0.05:
         return "Close-up Shot"
     elif distance_metric > 0.5:
         return "Wide Shot"
