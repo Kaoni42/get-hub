@@ -3,10 +3,45 @@ import base64
 import json
 import os
 import tempfile
+import uuid
 
 import cv2
 from google.cloud import storage
 from jinja2 import Environment, FileSystemLoader
+
+
+def classify_shot(box: dict) -> str:
+    """
+    Classifies a shot based on the bounding box's position and size.
+
+    Args:
+        box: A dictionary representing the normalized bounding box.
+
+    Returns:
+        A string classification: "Close-up", "Medium", or "Wide".
+    """
+    if not box:
+        return "Unknown"
+
+    top = box.get('top', 0.0)
+    left = box.get('left', 0.0)
+    right = box.get('right', 0.0)
+
+    # Calculate distance from the nearest vertical edge
+    horizontal_center = (left + right) / 2.0
+    if horizontal_center < 0.5:
+        distance_from_side = left
+    else:
+        distance_from_side = 1.0 - right
+
+    # New classification logic
+    distance_metric = top + distance_from_side
+    if distance_metric < 0.15:
+        return "Close-up Shot"
+    elif distance_metric > 0.5:
+        return "Wide Shot"
+    else:
+        return "Medium Shot"
 
 
 def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
@@ -37,14 +72,18 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
     # Download JSON analysis file
     print(f"Downloading JSON file: {json_blob_name}")
     json_blob = bucket.blob(json_blob_name)
-    json_data = json.loads(json_blob.download_as_string())
+    try:
+        json_data = json.loads(json_blob.download_as_string())
+    except Exception as e:
+        print(f"Error downloading or parsing JSON file: {e}")
+        return
 
     # --- DIAGNOSTIC MODE ---
     if diagnose:
         output_filename = "diagnostic_output.json"
         print(f"\n--- DIAGNOSTIC MODE ---")
         with open(output_filename, "w") as f:
-            f.write(json.dumps(json_data, indent=4))
+            json.dump(json_data, f, indent=4)
         print(f"Diagnostic data saved to '{output_filename}'.")
         print("Please copy the contents of this file and provide it in your response.")
         print("--- END DIAGNOSTIC MODE ---\n")
@@ -52,7 +91,7 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
 
     # Determine video file name
     video_blob_name, _ = os.path.splitext(json_blob_name)
-    possible_video_extensions = ['.mp4', '.mov', '.avi', '.mpg']
+    possible_video_extensions = ['.mp4', '.mov', '.avi', '.mpg', '.mkv']
     video_blob = None
     for ext in possible_video_extensions:
         potential_video_blob_name = video_blob_name + ext
@@ -75,37 +114,29 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
     # --- Process Video, Group Annotations, and Generate Thumbnails ---
     print("Processing video to group objects, classify shots, and generate thumbnails...")
     cap = cv2.VideoCapture(video_path)
-    tracked_objects = {}
-    untracked_counter = 0
-    NUM_FRAMES_PER_SEGMENT = 15
-    VIDEO_HEIGHT = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-
     if not cap.isOpened():
         raise IOError(f"Could not open video file: {video_path}")
 
-    # Parse the new objectAnnotations
+    tracked_objects = {}
+    NUM_FRAMES_PER_SEGMENT = 15
+
     annotations = json_data.get('annotationResults', [{}])[0].get('objectAnnotations', [])
     print(f"Found {len(annotations)} object annotations to process.")
 
-    for idx, annotation in enumerate(annotations):
+    for annotation in annotations:
         entity = annotation.get('entity', {})
         description = entity.get('description')
         if not description:
             continue
 
-        # Use trackId if available, otherwise generate a unique key for untracked objects
-        track_id = annotation.get('trackId')
-        group_key = track_id if track_id else f"untracked-{idx}"
-
-        # If this is the first time we see this track/group, initialize its entry
+        # Group by description since trackId is not reliable
+        group_key = description
         if group_key not in tracked_objects:
             tracked_objects[group_key] = {
                 'label': description.capitalize(),
-                'id': track_id if track_id else f"Untracked #{untracked_counter}",
+                'id': str(uuid.uuid4()), # Generate a unique ID for the group
                 'segments': []
             }
-            if not track_id:
-                untracked_counter += 1
 
         segment_data = annotation.get('segment', {})
         start_time_str = segment_data.get('startTimeOffset', '0s')
@@ -114,27 +145,14 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
         end_time = float(end_time_str.rstrip('s'))
         duration = end_time - start_time
 
-        shot_type = "N/A"  # Default for non-person objects
-        if description == 'person':
-            # Get the bounding box from the first frame of the segment to classify the shot
-            if 'frames' in annotation and annotation['frames']:
-                first_frame = annotation['frames'][0]
-                box = first_frame.get('normalizedBoundingBox', {})
-                box_height = box.get('bottom', 0) - box.get('top', 0)
+        shot_type = "N/A"
+        # Use the new shot classification logic for 'person' objects
+        if description == 'person' and 'frames' in annotation and annotation['frames']:
+            first_frame_box = annotation['frames'][0].get('normalizedBoundingBox', {})
+            shot_type = classify_shot(first_frame_box)
 
-                # Classify based on the height of the person relative to the frame
-                if box_height > 0.85:
-                    shot_type = "Close-up Shot"
-                elif box_height > 0.40:
-                    shot_type = "Medium Shot"
-                else:
-                    shot_type = "Wide Shot"
-            else:
-                shot_type = "Unknown"  # Person detected, but no frame data
-
-        # Generate thumbnails for scrubbing
         thumbnails_list = []
-        if duration > 0.1: # Only generate multiple frames if segment is long enough
+        if duration > 0.1:
             interval = duration / NUM_FRAMES_PER_SEGMENT
             for i in range(NUM_FRAMES_PER_SEGMENT):
                 time_pos_ms = (start_time + (i * interval)) * 1000
@@ -173,9 +191,12 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
     env = Environment(loader=FileSystemLoader(script_dir))
     template = env.get_template('template.html')
 
+    # Sort objects alphabetically by label for consistent output
+    sorted_tracked_objects = dict(sorted(tracked_objects.items()))
+
     html_content = template.render(
         video_file=video_blob.name,
-        tracked_objects=tracked_objects
+        tracked_objects=sorted_tracked_objects
     )
 
     report_filename = 'report.html'
