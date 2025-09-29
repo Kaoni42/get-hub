@@ -72,10 +72,10 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
         video_blob.download_to_filename(temp_video_file.name)
         video_path = temp_video_file.name
 
-    # --- Process Video, Classify Shots, and Generate Thumbnails ---
-    print("Processing video to classify shots and generate thumbnails...")
+    # --- Process Video, Group Annotations, and Generate Thumbnails ---
+    print("Processing video to group objects, classify shots, and generate thumbnails...")
     cap = cv2.VideoCapture(video_path)
-    results_data = []
+    tracked_objects = {}
     NUM_FRAMES_PER_SEGMENT = 15
     VIDEO_HEIGHT = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
@@ -89,12 +89,20 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
     for annotation in annotations:
         entity = annotation.get('entity', {})
         description = entity.get('description')
-        if not description:
+        track_id = annotation.get('trackId')
+        if not description or not track_id:
             continue
 
-        segment = annotation.get('segment', {})
-        start_time_str = segment.get('startTimeOffset', '0s')
-        end_time_str = segment.get('endTimeOffset', '0s')
+        # If this is the first time we see this track, initialize its entry
+        if track_id not in tracked_objects:
+            tracked_objects[track_id] = {
+                'label': description.capitalize(),
+                'segments': []
+            }
+
+        segment_data = annotation.get('segment', {})
+        start_time_str = segment_data.get('startTimeOffset', '0s')
+        end_time_str = segment_data.get('endTimeOffset', '0s')
         start_time = float(start_time_str.rstrip('s'))
         end_time = float(end_time_str.rstrip('s'))
         duration = end_time - start_time
@@ -129,7 +137,6 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
                     _, buffer = cv2.imencode('.jpg', frame)
                     thumbnails_list.append(base64.b64encode(buffer).decode('utf-8'))
 
-        # If no thumbnails were generated (short clip or error), grab the first frame
         if not thumbnails_list:
             cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
             success, frame = cap.read()
@@ -137,13 +144,11 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
                 _, buffer = cv2.imencode('.jpg', frame)
                 thumbnails_list.append(base64.b64encode(buffer).decode('utf-8'))
 
-        # Fallback for truly problematic cases
         if not thumbnails_list:
             print(f"Warning: Could not generate thumbnail for {description} at {start_time}s")
-            thumbnails_list.append("") # Add a placeholder
+            thumbnails_list.append("")
 
-        results_data.append({
-            'label': description.capitalize(),
+        tracked_objects[track_id]['segments'].append({
             'start_time': start_time,
             'end_time': end_time,
             'shot_type': shot_type,
@@ -153,7 +158,7 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
 
     cap.release()
     os.remove(video_path)
-    print("Finished classifying shots and generating thumbnails.")
+    print("Finished processing and grouping objects.")
 
     # --- Render HTML Report ---
     print("Rendering HTML report...")
@@ -163,7 +168,7 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
 
     html_content = template.render(
         video_file=video_blob.name,
-        results=results_data
+        tracked_objects=tracked_objects
     )
 
     report_filename = 'report.html'
