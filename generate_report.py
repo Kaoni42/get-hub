@@ -108,9 +108,9 @@ def generate_report(gcs_uri: str, project_id: str, diagnose: bool = False):
                 box_height = box.get('bottom', 0) - box.get('top', 0)
 
                 # Classify based on the height of the person relative to the frame
-                if box_height > 0.6:
+                if box_height > 0.75:
                     shot_type = "Close-up Shot"
-                elif box_height > 0.3:
+                elif box_height > 0.40:
                     shot_type = "Medium Shot"
                 else:
                     shot_type = "Wide Shot"
