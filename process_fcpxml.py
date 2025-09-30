@@ -42,7 +42,8 @@ def download_and_parse_fcpxml(project_id, bucket_name, fcpxml_name):
 
 def diagnose_fcpxml(project_id, bucket_name, fcpxml_name):
     """
-    Downloads and prints a summary of assets and keywords from an FCPXML file for diagnostic purposes.
+    Downloads and prints a detailed summary of an FCPXML file for diagnostic purposes,
+    including file headers and namespace checks.
     """
     print(f"--- FCPXML DIAGNOSTIC MODE ---")
     try:
@@ -55,42 +56,69 @@ def diagnose_fcpxml(project_id, bucket_name, fcpxml_name):
             return
 
         print(f"Downloading {fcpxml_name} from bucket {bucket_name}...")
-        fcpxml_content = blob.download_as_string()
+        fcpxml_content_bytes = blob.download_as_string()
+        fcpxml_content_str = fcpxml_content_bytes.decode('utf-8')
 
-        root = ET.fromstring(fcpxml_content)
+        print("\n--- File Header (First 10 Lines) ---")
+        header_lines = fcpxml_content_str.splitlines()[:10]
+        for line in header_lines:
+            print(line)
+        print("------------------------------------")
+
+        root = ET.fromstring(fcpxml_content_bytes)
+
+        # Attempt 1: With standard FCPXML namespace
+        print("\nAttempt 1: Searching for <asset> tags with standard namespace (http://www.apple.com/fcpxml-v1.0)...")
         namespaces = {'': 'http://www.apple.com/fcpxml-v1.0'}
+        assets_with_ns = root.findall('.//asset', namespaces)
 
-        assets = root.findall('.//asset', namespaces)
-        if not assets:
-            print("No <asset> elements found in the FCPXML file.")
-            return
+        if assets_with_ns:
+            print(f"Success! Found {len(assets_with_ns)} assets with the standard namespace.")
+            print_asset_summary(assets_with_ns, namespaces)
+        else:
+            print("Result: No <asset> elements found with the standard namespace.")
 
-        print(f"\nFound {len(assets)} assets. Analyzing keywords...")
-        print("-" * 20)
+        # Attempt 2: Without any namespace
+        print("\nAttempt 2: Searching for <asset> tags without a namespace...")
+        assets_no_ns = root.findall('.//asset')
 
-        found_keywords = False
-        for i, asset in enumerate(assets):
-            asset_name = asset.get('name', 'N/A')
-            asset_src = asset.find('media-rep', namespaces).get('src') if asset.find('media-rep', namespaces) is not None else 'N/A'
-            keywords = [kw.get('value') for kw in asset.findall('keyword', namespaces)]
+        if assets_no_ns and not assets_with_ns:
+            print(f"Success! Found {len(assets_no_ns)} assets without a namespace.")
+            print_asset_summary(assets_no_ns)
+        else:
+            print("Result: No <asset> elements found without a namespace.")
 
-            print(f"Asset {i+1}:")
-            print(f"  - Name: {asset_name}")
-            print(f"  - Source: {asset_src}")
-            if keywords:
-                print(f"  - Keywords: {', '.join(keywords)}")
-                found_keywords = True
-            else:
-                print(f"  - Keywords: None")
-            print("-" * 20)
-
-        if not found_keywords:
-            print("\nWarning: No <keyword> elements were found for any asset.")
+        if not assets_with_ns and not assets_no_ns:
+            print("\nConclusion: The script could not find any <asset> tags. This is likely because the XML namespace is non-standard or the file is not a valid FCPXML.")
 
         print("\n--- DIAGNOSTIC COMPLETE ---")
 
+    except ET.ParseError as e:
+        print(f"\nXML PARSE ERROR: The file '{fcpxml_name}' could not be parsed. It may be corrupted or not a valid XML file.")
+        print(f"Error details: {e}")
     except Exception as e:
-        print(f"An error occurred during diagnosis: {e}")
+        print(f"\nAn unexpected error occurred during diagnosis: {e}")
+
+def print_asset_summary(assets, namespaces=None):
+    """Helper function to print a summary of found assets."""
+    print("-" * 20)
+    for i, asset in enumerate(assets):
+        asset_name = asset.get('name', 'N/A')
+
+        # Find media-rep with or without namespace
+        media_rep_finder = asset.find if namespaces else lambda path: asset.find(path, namespaces)
+        media_rep = media_rep_finder('media-rep')
+        asset_src = media_rep.get('src') if media_rep is not None else 'N/A'
+
+        # Find keywords with or without namespace
+        keyword_finder = asset.findall if namespaces else lambda path: asset.findall(path, namespaces)
+        keywords = [kw.get('value') for kw in keyword_finder('keyword')]
+
+        print(f"Asset {i+1}:")
+        print(f"  - Name: {asset_name}")
+        print(f"  - Source: {asset_src}")
+        print(f"  - Keywords: {', '.join(keywords) if keywords else 'None'}")
+        print("-" * 20)
 
 
 def main(project_id, bucket_name, fcpxml_name, diagnose_fcpxml_flag):
