@@ -15,7 +15,7 @@ def download_gcs_file(project_id, bucket_name, source_blob_name, destination_fil
 
 def search_fcpxml(file_path, keywords):
     """Parses an FCPXML file and searches for clips with keywords."""
-    print(f"\nPerforming a comprehensive search for keywords: {', '.join(keywords)} in {file_path}")
+    print(f"Performing a targeted search for keywords: {', '.join(keywords)} in {file_path}")
 
     try:
         tree = ET.parse(file_path)
@@ -27,40 +27,44 @@ def search_fcpxml(file_path, keywords):
     found_clip_names = set()
     lower_keywords = [k.lower() for k in keywords]
 
-    # Find all 'clip' elements first.
-    for clip in root.findall('.//clip'):
-        clip_name = clip.get('name', 'Unnamed Clip')
-        found_keyword = None
+    # Search in various clip types
+    for clip_type in ['clip', 'asset-clip', 'ref-clip', 'sync-clip', 'multicam-clip']:
+        for clip in root.findall(f'.//{clip_type}'):
+            clip_name = clip.get('name', f'Unnamed {clip_type}')
 
-        # Use iter() to search the clip itself and all its descendants
-        for element in clip.iter():
-            # Check the element's text content
-            if element.text:
-                for keyword in lower_keywords:
-                    if keyword in element.text.lower():
-                        found_keyword = keyword
-                        break
-            if found_keyword:
-                break
+            # Check clip name
+            if any(keyword in clip_name.lower() for keyword in lower_keywords):
+                if clip_name not in found_clip_names:
+                    print(clip_name)
+                    found_clip_names.add(clip_name)
+                continue
 
-            # Check all attribute values of the element
-            for attr_value in element.attrib.values():
-                if isinstance(attr_value, str):
-                    for keyword in lower_keywords:
-                        if keyword in attr_value.lower():
-                            found_keyword = keyword
-                            break
-                if found_keyword:
+            # Check keyword elements
+            for keyword_element in clip.findall('.//keyword'):
+                keyword_value = keyword_element.get('value', '').lower()
+                if any(keyword in keyword_value for keyword in lower_keywords):
+                    if clip_name not in found_clip_names:
+                        print(clip_name)
+                        found_clip_names.add(clip_name)
                     break
-            if found_keyword:
-                break
 
-        if found_keyword and clip_name not in found_clip_names:
-            print(clip_name)
-            found_clip_names.add(clip_name)
+            # Check notes
+            for note_element in clip.findall('.//note'):
+                if note_element.text and any(keyword in note_element.text.lower() for keyword in lower_keywords):
+                    if clip_name not in found_clip_names:
+                        print(clip_name)
+                        found_clip_names.add(clip_name)
+                    break
+
+            # Check keywords attribute
+            keywords_attr = clip.get('keywords', '').lower()
+            if any(keyword in keywords_attr.split() for keyword in lower_keywords):
+                 if clip_name not in found_clip_names:
+                    print(clip_name)
+                    found_clip_names.add(clip_name)
 
     if not found_clip_names:
-        print("No clips found matching the keywords after a comprehensive search.")
+        print("No clips found matching the keywords after a targeted search.")
 
 def main():
     parser = argparse.ArgumentParser(description='Search FCPXML file in GCS for keywords.')
