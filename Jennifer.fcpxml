@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+
+<fcpxml version="1.9">
+    <resources>
+        <format id="r1" name="FFVideoFormat1080p2997" frameDuration="1001/30000s" width="1920" height="1080" colorSpace="1-1-1 (Rec. 709)"/>
+        <asset id="r2" name="Guest Clip 1" uid="E2A5F8B9A0C1D2E3F4B5A6C7D8E9F0A1" start="0s" duration="300300/30000s" hasVideo="1" format="r1" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000">
+            <media-rep kind="original-media" sig="E2A5F8B9A0C1D2E3F4B5A6C7D8E9F0A1" src="file:///Users/jules/Movies/Final%20Cut%20Pro/Projects/My%20Project/Guest%20Clip%201.mov">
+            </media-rep>
+        </asset>
+        <asset id="r3" name="Decor Clip 1" uid="F1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6" start="0s" duration="150150/30000s" hasVideo="1" format="r1" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000">
+            <media-rep kind="original-media" sig="F1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6" src="file:///Users/jules/Movies/Final%20Cut%20Pro/Projects/My%20Project/Decor%20Clip%201.mov">
+            </media-rep>
+        </asset>
+        <asset id="r4" name="Interview Clip 1" uid="A9B8C7D6E5F4A3B2C1D0E9F8A7B6C5D4" start="0s" duration="600600/30000s" hasVideo="1" format="r1" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000">
+            <media-rep kind="original-media" sig="A9B8C7D6E5F4A3B2C1D0E9F8A7B6C5D4" src="file:///Users/jules/Movies/Final%20Cut%20Pro/Projects/My%20Project/Interview%20Clip%201.mov">
+            </media-rep>
+        </asset>
+    </resources>
+    <library location="file:///Users/jules/Movies/MyProject.fcpbundle/">
+        <event name="My Event" uid="~1">
+            <project name="My Project" uid="E2A5F8B9A0C1D2E3F4B5A6C7D8E9F0A1" modDate="2024-07-29 10:00:00 -0700">
+                <sequence duration="450450/30000s" format="r1" renderColorSpace="Rec. 709" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+                    <spine>
+                        <asset-clip name="Guest Clip 1" ref="r2" offset="0s" duration="100100/30000s" start="36036/30000s">
+                            <keyword start="1s" duration="2s" value="guest"/>
+                        </asset-clip>
+                        <asset-clip name="Decor Clip 1" ref="r3" offset="100100/30000s" duration="50050/30000s" start="72072/30000s">
+                            <keyword start="1s" duration="1s" value="decor"/>
+                        </asset-clip>
+                        <asset-clip name="Interview Clip 1" ref="r4" offset="150150/30000s" duration="200200/30000s" start="108108/30000s">
+                        </asset-clip>
+                    </spine>
+                </sequence>
+            </project>
+        </event>
+    </library>
+</fcpxml>
