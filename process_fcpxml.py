@@ -3,6 +3,7 @@ import os
 import xml.etree.ElementTree as ET
 
 from google.cloud import storage
+from google.api_core import exceptions
 
 from video_indexer import analyze_video
 from generate_report import generate_visual_report
@@ -43,34 +44,55 @@ def main(project_id, bucket_name, fcpxml_name):
     """
     Main function to orchestrate the FCPXML processing, video analysis, and report generation.
     """
-    print("Starting FCPXML processing workflow...")
-    # Step 1 & 2: Download, parse the FCPXML file, and extract video URLs
-    video_urls = download_and_parse_fcpxml(project_id, bucket_name, fcpxml_name)
+    try:
+        print("Starting FCPXML processing workflow...")
+        # Step 1 & 2: Download, parse the FCPXML file, and extract video URLs
+        video_urls = download_and_parse_fcpxml(project_id, bucket_name, fcpxml_name)
 
-    if not video_urls:
-        print("No videos found with the specified keywords. Exiting.")
+        if not video_urls:
+            print("No videos found with the specified keywords. Exiting.")
+            return
+
+        # Step 3: Analyze videos and collect JSON URIs
+        json_uris = []
+        for video_url in video_urls:
+            print(f"Analyzing video: {video_url}")
+            try:
+                json_uri = analyze_video(video_url, project_id)
+                json_uris.append(json_uri)
+            except Exception as e:
+                print(f"Error analyzing video {video_url}: {e}")
+                continue
+
+        if not json_uris:
+            print("No videos were successfully analyzed. Exiting.")
+            return
+
+        # Step 4: Generate the HTML report
+        print(f"\nGenerating consolidated report for {len(json_uris)} video(s)...")
+        generate_visual_report(json_uris, project_id)
+
+        print("\nWorkflow complete. The final report has been saved as report.html.")
+
+    except exceptions.Unauthorized:
+        error_message = f"""
+--- AUTHENTICATION ERROR ---
+The script failed to authenticate with Google Cloud, resulting in a 401 Unauthorized error.
+
+This is usually caused by one of two things:
+1.  You have not authenticated your local environment.
+    - Please run the following command in your terminal and follow the prompts:
+      gcloud auth application-default login
+
+2.  Your authenticated user or service account does not have the required IAM permissions.
+    - Please ensure your account has the following roles (or equivalent permissions):
+      - 'Storage Object Viewer' on the bucket '{bucket_name}' (or the project).
+      - 'Video Intelligence User' on the project '{project_id}'.
+
+After checking your authentication and permissions, please try running the script again.
+"""
+        print(error_message)
         return
-
-    # Step 3: Analyze videos and collect JSON URIs
-    json_uris = []
-    for video_url in video_urls:
-        print(f"Analyzing video: {video_url}")
-        try:
-            json_uri = analyze_video(video_url, project_id)
-            json_uris.append(json_uri)
-        except Exception as e:
-            print(f"Error analyzing video {video_url}: {e}")
-            continue
-
-    if not json_uris:
-        print("No videos were successfully analyzed. Exiting.")
-        return
-
-    # Step 4: Generate the HTML report
-    print(f"\nGenerating consolidated report for {len(json_uris)} video(s)...")
-    generate_visual_report(json_uris, project_id)
-
-    print("\nWorkflow complete. The final report has been saved as report.html.")
 
 
 if __name__ == "__main__":
