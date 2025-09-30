@@ -102,9 +102,13 @@ def main(project_id, bucket_name, fcpxml_name, results_file="analysis_results.tx
         # Step 2: Get the list of videos that are already processed
         processed_videos = get_processed_videos(results_file)
 
-        # For this specific request, we will only process "CAM A 3659.mov".
-        videos_to_process = ["gs://kaon123_bucket/CAM A 3659.mov"]
-        print("--- Single File Mode ---")
+        # Step 3: Determine the list of videos remaining to be processed
+        videos_to_process = [v for v in all_videos if v not in processed_videos]
+
+        if not videos_to_process:
+            print("All videos have already been analyzed. Nothing to do.")
+            print(f"To generate the report data, run: python3 {__file__} --project-id {project_id} --generate-report")
+            return
 
         print(f"\nFound {len(all_videos)} total videos.")
         print(f"{len(processed_videos)} videos already processed.")
