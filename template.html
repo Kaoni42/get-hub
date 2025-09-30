@@ -3,182 +3,170 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Intelligence Analysis Report</title>
+    <title>Video Analysis Report</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             line-height: 1.6;
-            color: #333;
-            max-width: 1200px;
-            margin: 20px auto;
-            padding: 0 20px;
-            background-color: #f9f9f9;
-        }
-        h1 {
-            text-align: center;
-            color: #444;
-            border-bottom: 2px solid #eee;
-            padding-bottom: 10px;
-        }
-        .video-info {
-            background-color: #fff;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
-            word-wrap: break-word;
-        }
-        .video-info strong {
-            color: #555;
-        }
-        .track-group {
-            background-color: #fff;
+            background-color: #f8f9fa;
+            color: #212529;
+            margin: 0;
             padding: 20px;
+        }
+        #report-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 2rem;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         }
-        .track-group h2 {
-            margin-top: 0;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 10px;
-            color: #0056b3;
+        h1, h2, h3 {
+            color: #343a40;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 0.5rem;
+            margin-top: 1.5rem;
         }
-        .track-id {
-            font-size: 0.7em;
-            color: #999;
-            font-weight: normal;
+        h1 { font-size: 2.5rem; }
+        h2 { font-size: 2rem; }
+        h3 { font-size: 1.5rem; }
+        code {
+            background-color: #e9ecef;
+            padding: 0.2em 0.4em;
+            margin: 0;
+            font-size: 85%;
+            border-radius: 3px;
         }
-        .results-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        .video-section {
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
+        .object-section {
+            margin-left: 2rem;
+            border-left: 3px solid #007bff;
+            padding-left: 1.5rem;
+        }
+        .segment {
+            display: flex;
+            align-items: center;
             gap: 20px;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background-color: #f8f9fa;
+            border-radius: 5px;
         }
-        .result-card {
-            background-color: #fdfdfd;
-            border: 1px solid #eee;
-            border-radius: 8px;
+        .thumbnail-container {
+            width: 320px;
+            height: 180px;
+            background-color: #000;
+            position: relative;
+            cursor: crosshair;
+            border-radius: 4px;
             overflow: hidden;
-            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .result-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-        }
-        .result-card img {
+        .thumbnail-container img {
             width: 100%;
-            height: auto;
-            display: block;
-            background-color: #eee;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
         }
-        .result-card-content {
-            padding: 15px;
+        .segment-info {
+            flex-grow: 1;
         }
-        .timestamp {
-            font-size: 0.9em;
-            color: #666;
-            background-color: #eee;
-            padding: 2px 6px;
-            border-radius: 4px;
-            display: inline-block;
-        }
-        .shot-type {
-            font-size: 0.9em;
-            color: #31708f;
-            background-color: #d9edf7;
-            padding: 2px 6px;
-            border-radius: 4px;
-            display: inline-block;
-            margin-top: 4px;
-        }
-        .confidence {
-            font-size: 0.9em;
-            color: #466e47;
+        .segment-info p { margin: 0.2rem 0; }
+        #loader {
+            font-size: 1.5rem;
+            text-align: center;
+            padding: 3rem;
         }
     </style>
 </head>
 <body>
-    <h1>Video Intelligence Analysis Report</h1>
 
-    {% for video_data in all_videos_data %}
-    <div class="video-section">
-        <div class="video-info">
-            <strong>Video File:</strong> {{ video_data.video_file }}
-        </div>
-
-        {% for group_key, object_data in video_data.tracked_objects.items() %}
-        <div class="track-group">
-            <h2>{{ object_data.label }} <span class="track-id">#{{ object_data.id }}</span></h2>
-            <div class="results-grid">
-                {% for segment in object_data.segments %}
-                <div class="result-card">
-                    <img src="data:image/jpeg;base64,{{ segment.thumbnails[0] if segment.thumbnails else '' }}"
-                         alt="Thumbnail for {{ object_data.label }}"
-                         class="scrubbable"
-                         data-thumbnails='{{ segment.thumbnails | tojson | safe }}'>
-                    <div class="result-card-content">
-                        <p>
-                            <span class="timestamp">
-                               {{ "%.2f"|format(segment.start_time) }}s - {{ "%.2f"|format(segment.end_time) }}s
-                            </span><br>
-                            <span class="shot-type">{{ segment.shot_type }}</span>
-                            {% if segment.confidence > 0 %}<br>
-                               <span class="confidence">Confidence: {{ "%.2f"|format(segment.confidence * 100) }}%</span>
-                            {% endif %}
-                        </p>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% else %}
-        <div class="video-info" style="text-align: center;">
-            <h3>No Objects Detected in this Video</h3>
-            <p>The analysis did not find any trackable objects in {{ video_data.video_file }}.</p>
-        </div>
-        {% endfor %}
+    <div id="report-container">
+        <h1>Video Analysis Report</h1>
+        <div id="loader">Loading report data...</div>
+        <div id="content"></div>
     </div>
-    {% else %}
-    <div class="video-info" style="text-align: center;">
-        <h3>No Videos Processed</h3>
-        <p>No video data was available to generate the report.</p>
-    </div>
-    {% endfor %}
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const scrubbableImages = document.querySelectorAll('.scrubbable');
-
-            scrubbableImages.forEach(img => {
-                const thumbnails = JSON.parse(img.dataset.thumbnails);
-                const frameCount = thumbnails.length;
-
-                if (frameCount <= 1) return; // Don't add listeners if there's nothing to scrub
-
-                const originalSrc = img.src;
-
-                img.addEventListener('mousemove', function(e) {
-                    const rect = img.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const width = rect.width;
-                    const percent = x / width;
-
-                    let frameIndex = Math.floor(percent * frameCount);
-                    // Clamp the index to be within the array bounds
-                    frameIndex = Math.max(0, Math.min(frameCount - 1, frameIndex));
-
-                    // Only update the src if it has changed to prevent flickering
-                    const newSrc = 'data:image/jpeg;base64,' + thumbnails[frameIndex];
-                    if (img.src !== newSrc) {
-                        img.src = newSrc;
+        document.addEventListener('DOMContentLoaded', () => {
+            fetch('report_data.json')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
                     }
+                    return response.json();
+                })
+                .then(data => {
+                    document.getElementById('loader').style.display = 'none';
+                    const content = document.getElementById('content');
+                    renderReport(data, content);
+                })
+                .catch(error => {
+                    const loader = document.getElementById('loader');
+                    loader.style.color = 'red';
+                    loader.textContent = `Failed to load report_data.json. Please ensure the file is in the same directory as this HTML file. Error: ${error.message}`;
                 });
-
-                img.addEventListener('mouseleave', function() {
-                    img.src = originalSrc;
-                });
-            });
         });
+
+        function renderReport(data, container) {
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p>No video data found in report.</p>';
+                return;
+            }
+
+            data.forEach(video => {
+                const videoSection = document.createElement('div');
+                videoSection.className = 'video-section';
+                videoSection.innerHTML = `<h2>Video: <code>${video.video_file}</code></h2>`;
+
+                Object.values(video.tracked_objects).forEach(object => {
+                    const objectSection = document.createElement('div');
+                    objectSection.className = 'object-section';
+                    objectSection.innerHTML = `<h3>Object: ${object.label}</h3>`;
+
+                    object.segments.forEach(segment => {
+                        const segmentDiv = document.createElement('div');
+                        segmentDiv.className = 'segment';
+
+                        const thumbnailContainer = document.createElement('div');
+                        thumbnailContainer.className = 'thumbnail-container';
+                        const thumbnailImage = document.createElement('img');
+                        thumbnailImage.src = segment.thumbnails.length > 0 ? segment.thumbnails[0] : '';
+                        thumbnailContainer.appendChild(thumbnailImage);
+
+                        const segmentInfo = document.createElement('div');
+                        segmentInfo.className = 'segment-info';
+                        segmentInfo.innerHTML = `
+                            <p><strong>Time:</strong> ${segment.start_time.toFixed(2)}s - ${segment.end_time.toFixed(2)}s</p>
+                            <p><strong>Confidence:</strong> ${(segment.confidence * 100).toFixed(2)}%</p>
+                            <p><strong>Shot Type:</strong> ${segment.shot_type}</p>
+                        `;
+
+                        segmentDiv.appendChild(thumbnailContainer);
+                        segmentDiv.appendChild(segmentInfo);
+                        objectSection.appendChild(segmentDiv);
+
+                        // Add scrubbable thumbnail logic
+                        thumbnailContainer.addEventListener('mousemove', (e) => {
+                            const rect = thumbnailContainer.getBoundingClientRect();
+                            const x = e.clientX - rect.left;
+                            const percent = x / rect.width;
+                            const thumbIndex = Math.floor(percent * segment.thumbnails.length);
+                            const clampedIndex = Math.max(0, Math.min(thumbIndex, segment.thumbnails.length - 1));
+                            thumbnailImage.src = segment.thumbnails[clampedIndex];
+                        });
+                    });
+
+                    videoSection.appendChild(objectSection);
+                });
+                container.appendChild(videoSection);
+            });
+        }
     </script>
+
 </body>
 </html>

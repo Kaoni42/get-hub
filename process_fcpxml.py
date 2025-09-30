@@ -8,7 +8,7 @@ from google.cloud import storage
 from google.api_core import exceptions
 
 from video_indexer import analyze_video
-from generate_report import generate_visual_report
+from generate_report import generate_report_data
 
 def download_and_parse_fcpxml(project_id, bucket_name, fcpxml_name):
     """
@@ -77,9 +77,9 @@ def main(project_id, bucket_name, fcpxml_name, results_file="analysis_results.tx
     Main function to orchestrate video processing and report generation.
     """
     if generate_report:
-        print("--- Generating Final Report ---")
+        print("--- Generating Report Data ---")
         if not os.path.exists(results_file):
-            print(f"Error: Results file '{results_file}' not found. Cannot generate report.")
+            print(f"Error: Results file '{results_file}' not found. Cannot generate report data.")
             return
         with open(results_file, 'r') as f:
             json_uris = [line.strip() for line in f]
@@ -88,8 +88,9 @@ def main(project_id, bucket_name, fcpxml_name, results_file="analysis_results.tx
             print("No analysis results found. Nothing to report.")
             return
 
-        generate_visual_report(json_uris, project_id)
-        print(f"\n--- Report generation complete. See report.html ---")
+        generate_report_data(json_uris, project_id)
+        print(f"\n--- Report data generation complete. ---")
+        print("You can now open report.html in your browser to view the dynamic report.")
         return
 
     try:
@@ -101,13 +102,9 @@ def main(project_id, bucket_name, fcpxml_name, results_file="analysis_results.tx
         # Step 2: Get the list of videos that are already processed
         processed_videos = get_processed_videos(results_file)
 
-        # Step 3: Determine the list of videos remaining to be processed
-        videos_to_process = [v for v in all_videos if v not in processed_videos]
-
-        if not videos_to_process:
-            print("All videos have already been analyzed. Nothing to do.")
-            print(f"To generate the final report, run: python3 {__file__} --project-id {project_id} --generate-report")
-            return
+        # For this specific request, we will only process "CAM A 3659.mov".
+        videos_to_process = ["gs://kaon123_bucket/CAM A 3659.mov"]
+        print("--- Single File Mode ---")
 
         print(f"\nFound {len(all_videos)} total videos.")
         print(f"{len(processed_videos)} videos already processed.")
@@ -140,18 +137,18 @@ def main(project_id, bucket_name, fcpxml_name, results_file="analysis_results.tx
             time.sleep(1.1)
 
         print("\n--- Video processing complete ---")
-        print(f"To generate the final report, run: python3 {__file__} --project-id {project_id} --generate-report")
+        print(f"To generate the report data, run: python3 {__file__} --project-id {project_id} --generate-report")
 
     except Exception as e:
         print(f"A critical error occurred: {e}")
         return
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Process FCPXML videos from GCS.")
+    parser = argparse.ArgumentParser(description="Process FCPXML videos from GCS and generate report data.")
     parser.add_argument("--project-id", required=True, help="Google Cloud project ID.")
     parser.add_argument("--bucket-name", default="kaon123_bucket", help="GCS bucket name.")
     parser.add_argument("--fcpxml-name", default="Jennifer.fcpxml", help="FCPXML file name in GCS.")
-    parser.add_argument("--generate-report", action="store_true", help="Generate final report from existing results.")
+    parser.add_argument("--generate-report", action="store_true", help="Generate report_data.json and upload thumbnails from existing results.")
     args = parser.parse_args()
 
     main(args.project_id, args.bucket_name, args.fcpxml_name, generate_report=args.generate_report)
