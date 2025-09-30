@@ -63,24 +63,20 @@ def generate_visual_report(gcs_uris: list, project_id: str, diagnose: bool = Fal
             bucket = storage_client.bucket(bucket_name)
 
             json_blob = bucket.blob(json_blob_name)
-            json_data = json.loads(json_blob.download_as_string())
-
-            if diagnose:
-                # In diagnostic mode, just save the first JSON and exit.
-                output_filename = f"diagnostic_{os.path.basename(json_blob_name)}"
-                with open(output_filename, "w") as f:
-                    json.dump(json_data, f, indent=4)
-                print(f"Diagnostic data for {gcs_uri} saved to '{output_filename}'.")
+            if not json_blob.exists():
+                print(f"  -> Error: JSON file not found at {gcs_uri}. Skipping.")
                 continue
 
-            video_blob_name, _ = os.path.splitext(json_blob_name)
-            video_blob = next((blob for ext in ['.mp4', '.mov', '.avi', '.mpg', '.mkv']
-                               if (blob := bucket.blob(f"{video_blob_name}{ext}")).exists()), None)
+            json_data = json.loads(json_blob.download_as_string())
 
-            if not video_blob:
+            video_blob_name, _ = os.path.splitext(json_blob_name)
+            # Use the .mov extension for the video file as per previous logic
+            video_blob = bucket.blob(f"{video_blob_name}.mov")
+
+            if not video_blob.exists():
                 raise FileNotFoundError(f"No corresponding video file found for {json_blob_name}")
 
-            with tempfile.NamedTemporaryFile(suffix=os.path.splitext(video_blob.name)[1], delete=False) as temp_video_file:
+            with tempfile.NamedTemporaryFile(suffix=".mov", delete=False) as temp_video_file:
                 video_blob.download_to_filename(temp_video_file.name)
                 video_path = temp_video_file.name
 
@@ -112,7 +108,7 @@ def generate_visual_report(gcs_uris: list, project_id: str, diagnose: bool = Fal
                     shot_type = classify_shot(annotation['frames'][0].get('normalizedBoundingBox', {}))
 
                 thumbnails_list = []
-                interval = (end_time - start_time) / NUM_FRAMES_PER_SEGMENT
+                interval = (end_time - start_time) / NUM_FRAMES_PER_SEGMENT if NUM_FRAMES_PER_SEGMENT > 0 else 0
                 for i in range(NUM_FRAMES_PER_SEGMENT):
                     time_pos_ms = (start_time + (i * interval)) * 1000
                     cap.set(cv2.CAP_PROP_POS_MSEC, time_pos_ms)
@@ -137,10 +133,6 @@ def generate_visual_report(gcs_uris: list, project_id: str, diagnose: bool = Fal
         except Exception as e:
             print(f"Error processing {gcs_uri}: {e}")
             continue
-
-    if diagnose:
-        print("\nDiagnostic mode complete.")
-        return
 
     if not all_videos_data:
         print("No data was processed to generate a report.")
@@ -171,10 +163,5 @@ if __name__ == "__main__":
         required=True,
         help="Your Google Cloud project ID.",
     )
-    parser.add_argument(
-        "--diagnose",
-        action="store_true",
-        help="Run in diagnostic mode. Saves the JSON structure for each input file.",
-    )
     args = parser.parse_args()
-    generate_visual_report(args.gcs_uris, args.project_id, args.diagnose)
+    generate_visual_report(args.gcs_uris, args.project_id)

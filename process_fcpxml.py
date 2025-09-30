@@ -2,6 +2,7 @@ import argparse
 import os
 import xml.etree.ElementTree as ET
 import urllib.parse
+import time
 
 from google.cloud import storage
 from google.api_core import exceptions
@@ -9,194 +10,148 @@ from google.api_core import exceptions
 from video_indexer import analyze_video
 from generate_report import generate_visual_report
 
-
-def parse_fcpxml_from_file(fcpxml_path, bucket_name):
+def download_and_parse_fcpxml(project_id, bucket_name, fcpxml_name):
     """
-    Parses a local FCPXML file and constructs GCS URIs for videos
+    Downloads an FCPXML file from GCS, parses it, and extracts video GCS URIs
     based on specified keywords.
     """
-    print(f"Parsing {fcpxml_path} to find videos with 'decor' or 'guest' keywords...")
+    print(f"Downloading {fcpxml_name} from gs://{bucket_name}...")
     try:
-        tree = ET.parse(fcpxml_path)
-    except ET.ParseError as e:
-        print(f"XML Parse Error: Could not parse {fcpxml_path}. Details: {e}")
+        storage_client = storage.Client(project=project_id)
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(fcpxml_name)
+
+        if not blob.exists():
+            print(f"--- ERROR: FILE NOT FOUND ---")
+            print(f"The file '{fcpxml_name}' was not found in the bucket '{bucket_name}'.")
+            return []
+
+        fcpxml_content = blob.download_as_string()
+        root = ET.fromstring(fcpxml_content)
+    except Exception as e:
+        print(f"An unexpected error occurred during download/parsing: {e}")
         return []
 
-    root = tree.getroot()
-
-    # Create a dictionary to map asset IDs to their GCS URIs
     asset_map = {}
-    # Find all asset elements in the resources section
     for asset in root.findall('./resources/asset'):
         asset_id = asset.get('id')
         media_rep = asset.find('media-rep')
         if asset_id and media_rep is not None and media_rep.get('kind') == 'original-media':
             src = media_rep.get('src')
             if src:
-                # The src is a file URI, e.g., file:///path/to/My%20Clip.mov
-                # We need to extract the filename and construct a GCS URI.
                 parsed_url = urllib.parse.urlparse(src)
-                # Unquote to handle spaces etc, then get the base name
                 filename = os.path.basename(urllib.parse.unquote(parsed_url.path))
-                gcs_uri = f"gs://{bucket_name}/{filename}"
+                base_filename, _ = os.path.splitext(filename)
+                new_filename = base_filename + ".mov"
+                gcs_uri = f"gs://{bucket_name}/{new_filename}"
                 asset_map[asset_id] = gcs_uri
 
     video_urls = []
-    # Find all asset-clips in the timeline's spine
     for asset_clip in root.findall('.//spine/asset-clip'):
-        # Find all keyword tags within the asset-clip
         keywords = [kw.get('value') for kw in asset_clip.findall('keyword')]
         if "decor" in keywords or "guest" in keywords:
             asset_id_ref = asset_clip.get('ref')
             if asset_id_ref in asset_map:
                 video_urls.append(asset_map[asset_id_ref])
-            else:
-                print(f"Warning: Found an asset-clip with ref '{asset_id_ref}' but no matching asset in resources.")
 
-    print(f"Found {len(video_urls)} video(s) to analyze:")
-    for url in video_urls:
-        print(f"- {url}")
-
-    return video_urls
+    # Return a unique list of video URLs
+    return sorted(list(set(video_urls)))
 
 
-def diagnose_fcpxml_local(fcpxml_path):
+def get_processed_videos(results_file):
+    """Reads the results file and returns a set of processed video URIs."""
+    if not os.path.exists(results_file):
+        return set()
+    with open(results_file, 'r') as f:
+        # Each line is a JSON URI, gs://bucket/video.json
+        # We convert it back to the expected video URI, gs://bucket/video.mov
+        processed_json_uris = [line.strip() for line in f]
+        processed_video_uris = set()
+        for json_uri in processed_json_uris:
+            base_name, _ = os.path.splitext(json_uri)
+            processed_video_uris.add(base_name + ".mov")
+        return processed_video_uris
+
+def main(project_id, bucket_name, fcpxml_name, results_file="analysis_results.txt", generate_report=False):
     """
-    Reads and prints a detailed summary of a local FCPXML file for diagnostic purposes.
+    Main function to orchestrate video processing and report generation.
     """
-    print(f"--- FCPXML DIAGNOSTIC MODE (Local File) ---")
-    try:
-        with open(fcpxml_path, 'r', encoding='utf-8') as f:
-            fcpxml_content_str = f.read()
-
-        print("\n--- File Header (First 10 Lines) ---")
-        header_lines = fcpxml_content_str.splitlines()[:10]
-        for line in header_lines:
-            print(line)
-        print("------------------------------------")
-
-        root = ET.fromstring(fcpxml_content_str)
-
-        # Check for asset-clips and keywords, which is the actual logic needed
-        print("\nChecking for <asset-clip> tags with <keyword> children...")
-        asset_clips = root.findall('.//spine/asset-clip')
-
-        if not asset_clips:
-            print("Result: No <asset-clip> elements found in the spine. The timeline might be empty or structured differently.")
-        else:
-            print(f"Found {len(asset_clips)} asset-clips in the spine.")
-            found_keywords = False
-            for i, clip in enumerate(asset_clips):
-                clip_name = clip.get('name', 'N/A')
-                keywords = [kw.get('value') for kw in clip.findall('keyword')]
-                if keywords:
-                    found_keywords = True
-                    print(f"  - Clip {i+1} ('{clip_name}') has keywords: {', '.join(keywords)}")
-            if not found_keywords:
-                print("Result: Found asset-clips, but none of them contained <keyword> tags.")
-
-        print("\n--- DIAGNOSTIC COMPLETE ---")
-
-    except FileNotFoundError:
-        print(f"Error: The file '{fcpxml_path}' was not found.")
-    except ET.ParseError as e:
-        print(f"\nXML PARSE ERROR: The file '{fcpxml_path}' could not be parsed. It may be corrupted or not a valid XML file.")
-        print(f"Error details: {e}")
-    except Exception as e:
-        print(f"\nAn unexpected error occurred during diagnosis: {e}")
-
-
-def main(project_id, bucket_name, fcpxml_name, diagnose_fcpxml_flag):
-    """
-    Main function to orchestrate the FCPXML processing, video analysis, and report generation.
-    """
-    # Construct an absolute path to the FCPXML file, assuming it's in the same directory as the script.
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    fcpxml_path = os.path.join(script_dir, fcpxml_name)
-
-    if diagnose_fcpxml_flag:
-        diagnose_fcpxml_local(fcpxml_path)
-        return
-
-    try:
-        print("Starting FCPXML processing workflow...")
-        # Step 1 & 2: Parse the local FCPXML file and extract video GCS URIs
-        video_urls = parse_fcpxml_from_file(fcpxml_path, bucket_name)
-
-        if not video_urls:
-            print("No videos found with the specified keywords. Exiting.")
+    if generate_report:
+        print("--- Generating Final Report ---")
+        if not os.path.exists(results_file):
+            print(f"Error: Results file '{results_file}' not found. Cannot generate report.")
             return
-
-        # Step 3: Analyze videos and collect JSON URIs
-        json_uris = []
-        for video_url in video_urls:
-            print(f"\nAnalyzing video: {video_url}")
-            try:
-                json_uri = analyze_video(video_url, project_id)
-                json_uris.append(json_uri)
-            except Exception as e:
-                print(f"Error analyzing video {video_url}: {e}")
-                continue
+        with open(results_file, 'r') as f:
+            json_uris = [line.strip() for line in f]
 
         if not json_uris:
-            print("No videos were successfully analyzed. Exiting.")
+            print("No analysis results found. Nothing to report.")
             return
 
-        # Step 4: Generate the HTML report
-        print(f"\nGenerating consolidated report for {len(json_uris)} video(s)...")
         generate_visual_report(json_uris, project_id)
-
-        print("\nWorkflow complete. The final report has been saved as report.html.")
-
-    except exceptions.Unauthorized:
-        error_message = f"""
---- AUTHENTICATION ERROR ---
-The script failed to authenticate with Google Cloud, resulting in a 401 Unauthorized error.
-This can happen if you have not authenticated your environment or if the
-credentials do not have the required permissions.
-
-To authenticate, you can use one of the following methods:
-1.  Run `gcloud auth application-default login` in your terminal.
-2.  Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to the path
-    of your service account key file.
-
-Please ensure your principal has the following IAM roles:
-- 'Video Intelligence User' on project '{project_id}'
-- 'Storage Object Viewer' on the video files in bucket '{bucket_name}'
-- 'Storage Object Creator' on the bucket used for Video Indexer output.
-"""
-        print(error_message)
-        return
-    except FileNotFoundError:
-        print(f"--- FILE NOT FOUND ERROR ---")
-        print(f"The FCPXML file '{fcpxml_path}' was not found.")
-        print("Please ensure the file exists in the same directory as the script and try again.")
+        print(f"\n--- Report generation complete. See report.html ---")
         return
 
+    try:
+        # Step 1: Get the full list of videos to process
+        all_videos = download_and_parse_fcpxml(project_id, bucket_name, fcpxml_name)
+        if not all_videos:
+            return
+
+        # Step 2: Get the list of videos that are already processed
+        processed_videos = get_processed_videos(results_file)
+
+        # Step 3: Determine the list of videos remaining to be processed
+        videos_to_process = [v for v in all_videos if v not in processed_videos]
+
+        if not videos_to_process:
+            print("All videos have already been analyzed. Nothing to do.")
+            print(f"To generate the final report, run: python3 {__file__} --project-id {project_id} --generate-report")
+            return
+
+        print(f"\nFound {len(all_videos)} total videos.")
+        print(f"{len(processed_videos)} videos already processed.")
+        print(f"Starting analysis for {len(videos_to_process)} remaining videos...")
+
+        # Step 4: Process the remaining videos
+        storage_client = storage.Client(project=project_id)
+        bucket = storage_client.bucket(bucket_name)
+
+        for i, video_url in enumerate(videos_to_process):
+            print(f"\n({i+1}/{len(videos_to_process)}) Processing: {video_url}")
+            try:
+                blob_name = video_url.replace(f"gs://{bucket_name}/", "")
+                if not bucket.blob(blob_name).exists():
+                    print(f"  -> Error: Video file not found. Skipping.")
+                    continue
+
+                print(f"  -> Found video. Starting analysis...")
+                json_uri = analyze_video(video_url, project_id)
+
+                # Append result immediately to the file to save progress
+                with open(results_file, "a") as f:
+                    f.write(f"{json_uri}\n")
+                print(f"  -> Success! Result saved to {results_file}")
+
+            except Exception as e:
+                print(f"  -> An unexpected error occurred: {e}")
+                continue
+
+            time.sleep(1.1)
+
+        print("\n--- Video processing complete ---")
+        print(f"To generate the final report, run: python3 {__file__} --project-id {project_id} --generate-report")
+
+    except Exception as e:
+        print(f"A critical error occurred: {e}")
+        return
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Process a local FCPXML file, analyze referenced videos from GCS, and generate a report."
-    )
-    parser.add_argument(
-        "--project-id",
-        required=True,
-        help="Your Google Cloud project ID.",
-    )
-    parser.add_argument(
-        "--bucket-name",
-        default="kaon123_bucket",
-        help="The GCS bucket where the video files are located.",
-    )
-    parser.add_argument(
-        "--fcpxml-name",
-        default="Jennifer.fcpxml",
-        help="The name of the local FCPXML file to process.",
-    )
-    parser.add_argument(
-        "--diagnose-fcpxml",
-        action="store_true",
-        help="Run in FCPXML diagnostic mode. Prints a summary of assets and keywords and exits.",
-    )
+    parser = argparse.ArgumentParser(description="Process FCPXML videos from GCS.")
+    parser.add_argument("--project-id", required=True, help="Google Cloud project ID.")
+    parser.add_argument("--bucket-name", default="kaon123_bucket", help="GCS bucket name.")
+    parser.add_argument("--fcpxml-name", default="Jennifer.fcpxml", help="FCPXML file name in GCS.")
+    parser.add_argument("--generate-report", action="store_true", help="Generate final report from existing results.")
     args = parser.parse_args()
-    main(args.project_id, args.bucket_name, args.fcpxml_name, args.diagnose_fcpxml)
+
+    main(args.project_id, args.bucket_name, args.fcpxml_name, generate_report=args.generate_report)
