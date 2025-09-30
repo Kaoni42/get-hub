@@ -1,12 +1,13 @@
 # Video Analysis and Reporting Scripts
 
-This repository contains a suite of Python scripts to analyze videos for object tracking using the Google Cloud Video Intelligence API and generate an interactive HTML report with shot type classification.
+This repository contains a suite of Python scripts to analyze videos for object tracking using the Google Cloud Video Intelligence API and generate an interactive HTML report. The workflow is orchestrated to start from an FCPXML file, automatically finding and processing tagged video assets.
 
 ## Features
 
--   **Video Analysis:** The `video_indexer.py` script processes a video file from Google Cloud Storage (GCS) and uses the Video Intelligence API to perform object tracking.
--   **Shot Classification:** The `generate_report.py` script analyzes the tracking data to classify shots containing people as "Close-up," "Medium," or "Wide" shots based on the person's size relative to the frame.
--   **Interactive Reports:** The report generator creates a self-contained `report.html` file with interactive thumbnails. You can hover your mouse over the thumbnails to scrub through a preview of the video segment.
+-   **FCPXML Parsing:** The main script can parse an `.fcpxml` file from Google Cloud Storage (GCS) to find video assets tagged with specific keywords (e.g., "decor", "guest").
+-   **Automated Video Analysis:** The `video_indexer.py` script processes video files from GCS and uses the Video Intelligence API to perform object tracking.
+-   **Shot Classification:** The `generate_report.py` script analyzes tracking data to classify shots containing people as "Close-up," "Medium," or "Wide."
+-   **Consolidated Interactive Reports:** The workflow generates a single, self-contained `report.html` file with interactive, scrubbable thumbnails for all analyzed videos.
 
 ## Prerequisites
 
@@ -36,40 +37,37 @@ This repository contains a suite of Python scripts to analyze videos for object 
 
 ## Workflow
 
-The process is two steps: first you analyze the video to generate a JSON data file, then you generate the HTML report from that data file.
+The entire process is automated by the `process_fcpxml.py` script. It handles finding the FCPXML file, identifying the correct videos, analyzing them, and generating a single report.
 
-### Step 1: Analyze the Video
+### Run the Automated Workflow
 
-Run the `video_indexer.py` script to perform object tracking on a video. You must provide the GCS URI of the video file and your Google Cloud project ID.
+Run the `process_fcpxml.py` script and provide your Google Cloud project ID. You can also specify the GCS bucket and FCPXML filename if they differ from the defaults.
 
-The script will save the full JSON response containing the object tracking data to the same GCS bucket, replacing the video's file extension with `.json`.
-
-#### Example
-
-```bash
-python video_indexer.py gs://your-bucket-name/your-video.mp4 --project-id your-gcp-project-id
-```
-
-### Step 2: Generate the Visual Report
-
-Once the analysis is complete and the `.json` file is in your GCS bucket, run the `generate_report.py` script. Provide the GCS URI of the `.json` file created in the previous step.
-
-The script will download the necessary files, classify the shots, extract frame sequences for the interactive thumbnails, and create a single `report.html` file in your local directory.
+The script will perform all the necessary steps and create a single `report.html` file in your local directory.
 
 #### Example
 
 ```bash
-python generate_report.py gs://your-bucket-name/your-video.json --project-id your-gcp-project-id
+# Run with default bucket ("kaon123_bucket") and file ("Jennifer.fcpxml")
+python process_fcpxml.py --project-id your-gcp-project-id
+
+# Specify a different bucket or filename
+python process_fcpxml.py --project-id your-gcp-project-id --bucket-name my-other-bucket --fcpxml-name project_file.fcpxml
 ```
 
-You can open the generated `report.html` file in any web browser to view the visual summary of the analysis, including the shot type for each detected person.
+You can open the generated `report.html` file in any web browser to view the visual summary of the analysis for all processed videos.
 
 ### Troubleshooting: Blank or Empty Reports
 
-If your `report.html` file is blank or shows a "No Labels Detected" message when you expect to see results, it likely means the script is not finding the object data in the JSON file. You can use the diagnostic mode to inspect the structure of the data.
+If your `report.html` file is blank or shows a "No Objects Detected" message, it could be due to a few reasons:
+1.  The FCPXML file does not contain any video assets with the keywords "decor" or "guest".
+2.  The video analysis with the Video Intelligence API did not detect any objects.
+
+The `process_fcpxml.py` script will print the GCS URIs of the JSON analysis files it creates. If you suspect an issue with the data processing, you can run the `generate_report.py` script in diagnostic mode on one of these URIs.
 
 ```bash
+# The URI will be printed in the output of the main script
 python generate_report.py gs://your-bucket-name/your-video.json --project-id your-gcp-project-id --diagnose
 ```
 
-When you run the script with the `--diagnose` flag, it will not generate a report. Instead, it will save the entire structure of your JSON file to a new file named `diagnostic_output.json` in your local directory. You can then open this file and provide its contents to help resolve issues with data parsing.
+This will save a `diagnostic_output.json` file locally, which you can inspect to see the raw data received from the Video Intelligence API.
