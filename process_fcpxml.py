@@ -110,14 +110,18 @@ def main(project_id, bucket_name, fcpxml_name, diagnose_fcpxml_flag):
     """
     Main function to orchestrate the FCPXML processing, video analysis, and report generation.
     """
+    # Construct an absolute path to the FCPXML file, assuming it's in the same directory as the script.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    fcpxml_path = os.path.join(script_dir, fcpxml_name)
+
     if diagnose_fcpxml_flag:
-        diagnose_fcpxml_local(fcpxml_name)
+        diagnose_fcpxml_local(fcpxml_path)
         return
 
     try:
         print("Starting FCPXML processing workflow...")
         # Step 1 & 2: Parse the local FCPXML file and extract video GCS URIs
-        video_urls = parse_fcpxml_from_file(fcpxml_name, bucket_name)
+        video_urls = parse_fcpxml_from_file(fcpxml_path, bucket_name)
 
         if not video_urls:
             print("No videos found with the specified keywords. Exiting.")
@@ -165,8 +169,8 @@ Please ensure your principal has the following IAM roles:
         return
     except FileNotFoundError:
         print(f"--- FILE NOT FOUND ERROR ---")
-        print(f"The FCPXML file '{fcpxml_name}' was not found in the current directory.")
-        print("Please ensure the file exists and you are running the script from the correct location.")
+        print(f"The FCPXML file '{fcpxml_path}' was not found.")
+        print("Please ensure the file exists in the same directory as the script and try again.")
         return
 
 
