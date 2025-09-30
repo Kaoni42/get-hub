@@ -40,10 +40,67 @@ def download_and_parse_fcpxml(project_id, bucket_name, fcpxml_name):
     return video_urls
 
 
-def main(project_id, bucket_name, fcpxml_name):
+def diagnose_fcpxml(project_id, bucket_name, fcpxml_name):
+    """
+    Downloads and prints a summary of assets and keywords from an FCPXML file for diagnostic purposes.
+    """
+    print(f"--- FCPXML DIAGNOSTIC MODE ---")
+    try:
+        storage_client = storage.Client(project=project_id)
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(fcpxml_name)
+
+        if not blob.exists():
+            print(f"Error: The file '{fcpxml_name}' was not found in the bucket '{bucket_name}'.")
+            return
+
+        print(f"Downloading {fcpxml_name} from bucket {bucket_name}...")
+        fcpxml_content = blob.download_as_string()
+
+        root = ET.fromstring(fcpxml_content)
+        namespaces = {'': 'http://www.apple.com/fcpxml-v1.0'}
+
+        assets = root.findall('.//asset', namespaces)
+        if not assets:
+            print("No <asset> elements found in the FCPXML file.")
+            return
+
+        print(f"\nFound {len(assets)} assets. Analyzing keywords...")
+        print("-" * 20)
+
+        found_keywords = False
+        for i, asset in enumerate(assets):
+            asset_name = asset.get('name', 'N/A')
+            asset_src = asset.find('media-rep', namespaces).get('src') if asset.find('media-rep', namespaces) is not None else 'N/A'
+            keywords = [kw.get('value') for kw in asset.findall('keyword', namespaces)]
+
+            print(f"Asset {i+1}:")
+            print(f"  - Name: {asset_name}")
+            print(f"  - Source: {asset_src}")
+            if keywords:
+                print(f"  - Keywords: {', '.join(keywords)}")
+                found_keywords = True
+            else:
+                print(f"  - Keywords: None")
+            print("-" * 20)
+
+        if not found_keywords:
+            print("\nWarning: No <keyword> elements were found for any asset.")
+
+        print("\n--- DIAGNOSTIC COMPLETE ---")
+
+    except Exception as e:
+        print(f"An error occurred during diagnosis: {e}")
+
+
+def main(project_id, bucket_name, fcpxml_name, diagnose_fcpxml_flag):
     """
     Main function to orchestrate the FCPXML processing, video analysis, and report generation.
     """
+    if diagnose_fcpxml_flag:
+        diagnose_fcpxml(project_id, bucket_name, fcpxml_name)
+        return
+
     try:
         print("Starting FCPXML processing workflow...")
         # Step 1 & 2: Download, parse the FCPXML file, and extract video URLs
@@ -114,5 +171,10 @@ if __name__ == "__main__":
         default="Jennifer.fcpxml",
         help="The name of the FCPXML file to process.",
     )
+    parser.add_argument(
+        "--diagnose-fcpxml",
+        action="store_true",
+        help="Run in FCPXML diagnostic mode. Prints a summary of assets and keywords and exits.",
+    )
     args = parser.parse_args()
-    main(args.project_id, args.bucket_name, args.fcpxml_name)
+    main(args.project_id, args.bucket_name, args.fcpxml_name, args.diagnose_fcpxml)
