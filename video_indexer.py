@@ -53,6 +53,7 @@ def analyze_video(gcs_uri: str, project_id: str):
 
     output_gcs_uri = f"gs://{bucket_name}/{output_blob_name}"
     print(f"\nFull API response with object tracking data saved to {output_gcs_uri}")
+    return output_gcs_uri
 
 
 if __name__ == "__main__":

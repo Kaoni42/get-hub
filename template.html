@@ -99,39 +99,49 @@
 </head>
 <body>
     <h1>Video Intelligence Analysis Report</h1>
-    <div class="video-info">
-        <strong>Video File:</strong> {{ video_file }}
-    </div>
 
-    {% for group_key, object_data in tracked_objects.items() %}
-    <div class="track-group">
-        <h2>{{ object_data.label }} <span class="track-id">#{{ object_data.id }}</span></h2>
-        <div class="results-grid">
-            {% for segment in object_data.segments %}
-            <div class="result-card">
-                <img src="data:image/jpeg;base64,{{ segment.thumbnails[0] }}"
-                     alt="Thumbnail for {{ object_data.label }}"
-                     class="scrubbable"
-                     data-thumbnails='{{ segment.thumbnails | tojson | safe }}'>
-                <div class="result-card-content">
-                    <p>
-                        <span class="timestamp">
-                           {{ "%.2f"|format(segment.start_time) }}s - {{ "%.2f"|format(segment.end_time) }}s
-                        </span><br>
-                        <span class="shot-type">{{ segment.shot_type }}</span>
-                        {% if segment.confidence > 0 %}<br>
-                           <span class="confidence">Confidence: {{ "%.2f"|format(segment.confidence * 100) }}%</span>
-                        {% endif %}
-                    </p>
-                </div>
-            </div>
-            {% endfor %}
+    {% for video_data in all_videos_data %}
+    <div class="video-section">
+        <div class="video-info">
+            <strong>Video File:</strong> {{ video_data.video_file }}
         </div>
+
+        {% for group_key, object_data in video_data.tracked_objects.items() %}
+        <div class="track-group">
+            <h2>{{ object_data.label }} <span class="track-id">#{{ object_data.id }}</span></h2>
+            <div class="results-grid">
+                {% for segment in object_data.segments %}
+                <div class="result-card">
+                    <img src="data:image/jpeg;base64,{{ segment.thumbnails[0] if segment.thumbnails else '' }}"
+                         alt="Thumbnail for {{ object_data.label }}"
+                         class="scrubbable"
+                         data-thumbnails='{{ segment.thumbnails | tojson | safe }}'>
+                    <div class="result-card-content">
+                        <p>
+                            <span class="timestamp">
+                               {{ "%.2f"|format(segment.start_time) }}s - {{ "%.2f"|format(segment.end_time) }}s
+                            </span><br>
+                            <span class="shot-type">{{ segment.shot_type }}</span>
+                            {% if segment.confidence > 0 %}<br>
+                               <span class="confidence">Confidence: {{ "%.2f"|format(segment.confidence * 100) }}%</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="video-info" style="text-align: center;">
+            <h3>No Objects Detected in this Video</h3>
+            <p>The analysis did not find any trackable objects in {{ video_data.video_file }}.</p>
+        </div>
+        {% endfor %}
     </div>
     {% else %}
     <div class="video-info" style="text-align: center;">
-        <h3>No Objects Detected</h3>
-        <p>The analysis did not find any trackable or untracked objects in the video.</p>
+        <h3>No Videos Processed</h3>
+        <p>No video data was available to generate the report.</p>
     </div>
     {% endfor %}
 
