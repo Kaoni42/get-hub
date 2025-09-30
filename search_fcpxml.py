@@ -56,7 +56,7 @@ def search_fcpxml(file_path, keywords):
                 break
 
         if found_keyword and clip_name not in found_clip_names:
-            print(f"Found clip containing keyword '{found_keyword}': {clip_name}")
+            print(clip_name)
             found_clip_names.add(clip_name)
 
     if not found_clip_names:
@@ -74,15 +74,6 @@ def main():
 
     try:
         download_gcs_file(args.project_id, args.bucket_name, args.file_name, local_file_path)
-
-        # Print the content of the downloaded file for debugging
-        print("\n--- Start of FCPXML File Content ---")
-        try:
-            with open(local_file_path, 'r', encoding='utf-8') as f:
-                print(f.read())
-        except Exception as e:
-            print(f"Could not read file content: {e}")
-        print("--- End of FCPXML File Content ---\n")
 
         search_fcpxml(local_file_path, keywords_to_search)
     finally:
